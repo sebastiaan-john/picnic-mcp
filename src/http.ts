@@ -24,8 +24,6 @@ export function serveHttp(factory: McpServerFactory, http: HttpConfig) {
 	const server = Bun.serve({
 		hostname: http.host,
 		port: http.port,
-		// Picnic calls can take longer than Bun's 10 s default idle timeout.
-		idleTimeout: 0,
 		fetch(request) {
 			if (!bearerMatches(request.headers.get("authorization"), http.token)) {
 				return new Response(null, {
@@ -36,6 +34,9 @@ export function serveHttp(factory: McpServerFactory, http: HttpConfig) {
 			if (new URL(request.url).pathname !== "/mcp") {
 				return new Response(null, { status: 404 });
 			}
+			// Picnic calls can outlast Bun's 10 s idle timeout; lift it only once the
+			// caller is authenticated, so idle anonymous sockets still get closed.
+			server.timeout(request, 0);
 			return handler.fetch(request);
 		},
 	});

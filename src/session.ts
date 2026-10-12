@@ -11,8 +11,8 @@ export type PicnicApi = InstanceType<typeof PicnicClient>;
 export interface Session {
 	/**
 	 * Runs `fn` with a logged-in client. Rejects with TwoFactorRequiredError
-	 * while 2FA is pending. An auth rejection inside `fn` invalidates the
-	 * session so the next call logs in again.
+	 * while 2FA is pending. Any non-network error inside `fn` makes the next
+	 * call re-check the saved key; it logs in again only if Picnic rejects it.
 	 */
 	call<T>(fn: (client: PicnicApi) => Promise<T>): Promise<T>;
 	/** Starts or restarts a 2FA attempt and asks Picnic for an SMS code. Resolves false when nothing is pending. */
@@ -73,7 +73,8 @@ export class PicnicSession implements Session {
 			return await fn(client);
 		} catch (error) {
 			// picnic-api errors carry no status, so any Picnic error re-checks the
-			// key on the next call (one GET). Network errors are TypeErrors and keep it.
+			// key on the next call (one GET). A bare network TypeError skips that;
+			// one wrapped by mutateCart re-checks, which costs the same GET.
 			if (!(error instanceof TypeError) && this.readyPromise === ready) {
 				this.readyPromise = undefined;
 			}
@@ -152,15 +153,20 @@ export class PicnicSession implements Session {
 
 	/**
 	 * Probes the saved key with a raw request because picnic-api's errors drop
-	 * the HTTP status. Only a 401 or 403 means the key is dead; a network error
-	 * or a Picnic 5xx propagates so the key survives for the next attempt.
+	 * the HTTP status. A 4xx other than a timeout or rate limit means the key is
+	 * dead, since Picnic's exact code is unknown and a stuck key would need the
+	 * state file deleted by hand. A network error or a Picnic 5xx propagates so
+	 * the key survives for the next attempt.
 	 */
 	private async savedKeyAccepted(client: PicnicApi): Promise<boolean> {
 		const response = await fetch(`${client.url}/user`, {
 			headers: client.baseHeaders,
 		});
+		await response.body?.cancel();
 		if (response.ok) return true;
-		if (response.status === 401 || response.status === 403) return false;
+		const { status } = response;
+		if (status >= 400 && status < 500 && status !== 408 && status !== 429)
+			return false;
 		throw new Error(
 			`Picnic session check failed: ${response.status} ${response.statusText}`,
 		);
@@ -186,10 +192,12 @@ export class PicnicSession implements Session {
 		const file = this.options.stateFile;
 		const tmp = `${file}.${randomBytes(6).toString("hex")}.tmp`;
 		await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-		await writeFile(tmp, JSON.stringify(state), { mode: 0o600, flag: "wx" });
-		await rename(tmp, file).catch(async (error: unknown) => {
+		try {
+			await writeFile(tmp, JSON.stringify(state), { mode: 0o600, flag: "wx" });
+			await rename(tmp, file);
+		} catch (error) {
 			await unlink(tmp).catch(() => {});
 			throw error;
-		});
+		}
 	}
 }

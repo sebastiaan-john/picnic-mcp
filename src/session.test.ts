@@ -76,10 +76,13 @@ function fakeApi(opts: {
 		return client as unknown as PicnicApi;
 	};
 	globalThis.fetch = (async (
-		_input: string | URL | Request,
+		input: string | URL | Request,
 		init?: RequestInit,
 	) => {
 		calls.probes++;
+		if (String(input) !== "https://picnic.test/api/15/user") {
+			throw new Error(`probe hit ${input}`);
+		}
 		if (opts.probeError) throw opts.probeError;
 		const key = new Headers(init?.headers).get("x-picnic-auth") ?? "";
 		const status =
@@ -160,15 +163,17 @@ describe("PicnicSession", () => {
 		expect(calls.created[0]?.deviceId).toMatch(/^[0-9A-F]{16}$/);
 	});
 
-	it("logs in again when the probe rejects the saved key", async () => {
+	it("logs in again when the probe rejects the saved key with any client error", async () => {
 		await new PicnicSession(options(stateFile), fakeApi({}).create).call(
 			whoami,
 		);
-		const { create, calls } = fakeApi({});
-		expect(
-			await new PicnicSession(options(stateFile), create).call(whoami),
-		).toBe("login-1");
-		expect(calls.login).toBe(1);
+		for (const probeStatus of [401, 403, 400]) {
+			const { create, calls } = fakeApi({ probeStatus });
+			expect(
+				await new PicnicSession(options(stateFile), create).call(whoami),
+			).toBe("login-1");
+			expect(calls.login).toBe(1);
+		}
 	});
 
 	it("keeps the saved key through a network error and a Picnic server error", async () => {
@@ -178,11 +183,16 @@ describe("PicnicSession", () => {
 		for (const probe of [
 			{ probeError: new TypeError("fetch failed") },
 			{ probeStatus: 503 },
+			{ probeStatus: 429 },
 		]) {
 			const { create, calls } = fakeApi(probe);
 			const session = new PicnicSession(options(stateFile), create);
-			await expect(session.call(whoami)).rejects.toThrow(/fetch failed|503/);
-			await expect(session.call(whoami)).rejects.toThrow(/fetch failed|503/);
+			await expect(session.call(whoami)).rejects.toThrow(
+				/fetch failed|503|429/,
+			);
+			await expect(session.call(whoami)).rejects.toThrow(
+				/fetch failed|503|429/,
+			);
 			expect(calls.login).toBe(0);
 			expect(calls.probes).toBe(2);
 		}

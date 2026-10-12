@@ -80,12 +80,12 @@ function fakeSession(
 			getDeliveryScenario: async () => ({ eta: "x" }),
 		},
 		recipe: {
-			getRecipe: async (...args: unknown[]) => {
-				calls.recipe.push(["getRecipe", ...args]);
+			getRecipe: async (id: string, portions?: number) => {
+				calls.recipe.push(["getRecipe", id, portions]);
 				return {
 					id: RECIPE_ID,
 					name: "Pasta",
-					portions: 2,
+					portions: portions ?? 2,
 					defaultPortions: 2,
 					isSaved: false,
 					imageId: "recipes/abc",
@@ -371,5 +371,15 @@ describe("picnic-mcp server", () => {
 			ingredient_lines: ["Nudeln 500 g"],
 			instructions: ["Kochen."],
 		});
+
+		calls.recipe.length = 0;
+		await client.callTool({
+			name: "picnic_get_recipe",
+			arguments: { recipe: RECIPE_ID, portions: 4 },
+		});
+		expect(calls.recipe).toEqual([
+			["getRecipe", RECIPE_ID, 4],
+			["getRecipeDetailsPage", RECIPE_ID, 4],
+		]);
 	});
 });
