@@ -33,6 +33,9 @@ export const IDEMPOTENT_WRITE: ToolAnnotations = {
 	openWorldHint: true,
 };
 
+export const NOT_IDEMPOTENT =
+	"Not idempotent; each call applies again. If it fails, call picnic_get_cart before retrying.";
+
 /** Cart writes Picnic does not deduplicate; a retried add or remove applies again. */
 export const CART_MUTATION: ToolAnnotations = {
 	readOnlyHint: false,

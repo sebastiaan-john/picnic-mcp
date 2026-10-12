@@ -4,12 +4,24 @@
 	"printWidth": 80,
 	"sortImports": {
 		"groups": [
-			["builtin", "external"],
-			["internal", "subpath"],
-			["parent", "sibling", "index"],
+			[
+				"builtin",
+				"external"
+			],
+			[
+				"internal",
+				"subpath"
+			],
+			[
+				"parent",
+				"sibling",
+				"index"
+			],
 			"unknown"
 		],
 		"newlinesBetween": false
 	},
-	"ignorePatterns": ["**/*.{md,json,jsonc,yml,yaml,toml}", "dist"]
+	"ignorePatterns": [
+		"**/*.{md,json,jsonc,yml,yaml,toml}"
+	]
 }

@@ -34,7 +34,7 @@ If the host cannot find `bun`, use its full path, for example `~/.bun/bin/bun`.
 
 ### Two-factor authentication
 
-Picnic asks for an SMS code on the first login from a new device. The server stays up; any tool you call answers with instructions to run `picnic_send_2fa_code`, then `picnic_verify_2fa_code` with the code you received. The session, device id, and pending 2FA state are saved in `PICNIC_STATE_FILE`, so later starts reuse them.
+Picnic asks for an SMS code when a login needs a second factor, for example the first login from a new device. The server stays up; any tool you call answers with instructions to run `picnic_send_2fa_code`, then `picnic_verify_2fa_code` with the code you received. The session, device id, and pending 2FA state are saved in `PICNIC_STATE_FILE`, so later starts reuse them.
 
 ### Environment
 
@@ -54,10 +54,11 @@ Empty values count as unset.
 ### HTTP mode
 
 ```sh
-PICNIC_HTTP_PORT=3000 PICNIC_HTTP_TOKEN=$(openssl rand -hex 24) bun src/index.ts
+export PICNIC_HTTP_TOKEN=$(openssl rand -hex 24); echo "$PICNIC_HTTP_TOKEN"
+PICNIC_HTTP_PORT=3000 PICNIC_USERNAME=you@example.com PICNIC_PASSWORD=... bun src/index.ts
 ```
 
-The endpoint is `/mcp`. The token is the only access control, which is why it is mandatory: it also stops browser pages from reaching the server through DNS rebinding, since they cannot attach it.
+The endpoint is `/mcp`. The token is the only access control, which is why it is mandatory: it also stops browser pages from reaching the server through DNS rebinding, since they do not know it.
 
 ## Tools
 
@@ -66,7 +67,7 @@ Prices are in euro cents. Product ids look like `s1001524`.
 | Tool | Does |
 |---|---|
 | `picnic_search_products` | Keyword search with paging |
-| `picnic_get_product` | One product; `full=true` adds nutrition sections, similar products, and price tiers |
+| `picnic_get_product` | One product; `full=true` adds ingredient and nutrition sections, similar products, and price tiers |
 | `picnic_get_product_image` | PNG image by image id |
 | `picnic_get_promotions` | This week's deals |
 | `picnic_get_cart` | Cart contents, totals, selected slot |
@@ -82,7 +83,7 @@ Prices are in euro cents. Product ids look like `s1001524`.
 | `picnic_get_account` | Account, address, household |
 | `picnic_send_2fa_code`, `picnic_verify_2fa_code` | Two-factor login |
 
-Adding and removing products and recipes is not idempotent. Picnic applies a mutation and renders the cart in the same request, so a failed call may still have changed the cart; the error says so and points at `picnic_get_cart` before any retry. Checkout and payment are not exposed; they stay in the Picnic app.
+Adding or removing products and adding recipes is not idempotent. Picnic applies a mutation and renders the cart in the same request, so a failed call may still have changed the cart; the error says so and points at `picnic_get_cart` before any retry. Checkout and payment are not exposed; they stay in the Picnic app.
 
 ## Development
 

@@ -9,7 +9,7 @@ import { registerRecipeTools } from "./tools/recipes";
 
 const INSTRUCTIONS = [
 	"Prices are integers in euro cents. Product ids look like 's1001524'.",
-	"Tools that change cart contents are not idempotent: after an error, call picnic_get_cart before retrying.",
+	"Adding or removing products and adding recipes is not idempotent: after an error, call picnic_get_cart before retrying.",
 	"Checkout and payment happen in the Picnic app, not here.",
 ].join(" ");
 

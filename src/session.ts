@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import PicnicClient from "picnic-api";
 import * as z from "zod";
@@ -25,6 +25,7 @@ const storedState = z.object({
 	authKey: z.string().nullable().catch(null),
 	twoFactorPending: z.boolean().catch(false),
 });
+type StoredState = z.infer<typeof storedState>;
 
 /** Thrown while 2FA is pending; the message tells the model which tools to call. */
 export class TwoFactorRequiredError extends Error {
@@ -41,18 +42,6 @@ export class TwoFactorRequiredError extends Error {
 export type CreateClient = (
 	options: ConstructorParameters<typeof PicnicClient>[0],
 ) => PicnicApi;
-
-/**
- * Whether Picnic rejected the auth key, as opposed to a network or server
- * error that should not cost the saved session. picnic-api throws a plain
- * Error carrying Picnic's message or `<status> <statusText>`; fetch failures
- * are TypeErrors. Picnic's exact wording is unverified, so this matches the
- * status codes and common phrasing.
- */
-function isAuthRejection(error: unknown): boolean {
-	if (!(error instanceof Error) || error instanceof TypeError) return false;
-	return /\b40[13]\b|unauthori[sz]ed|forbidden|\bauth/i.test(error.message);
-}
 
 function warnSaveFailed(error: unknown): void {
 	const message = error instanceof Error ? error.message : String(error);
@@ -78,21 +67,27 @@ export class PicnicSession implements Session {
 	) {}
 
 	async call<T>(fn: (client: PicnicApi) => Promise<T>): Promise<T> {
-		const client = await this.ready();
+		const ready = this.ready();
+		const client = await ready;
 		try {
 			return await fn(client);
 		} catch (error) {
-			if (isAuthRejection(error)) this.readyPromise = undefined;
+			// picnic-api errors carry no status, so any Picnic error re-checks the
+			// key on the next call (one GET). Network errors are TypeErrors and keep it.
+			if (!(error instanceof TypeError) && this.readyPromise === ready) {
+				this.readyPromise = undefined;
+			}
 			throw error;
 		}
 	}
 
 	async sendTwoFactorCode(): Promise<boolean> {
+		const client = await this.client();
 		if (this.twoFactorPending) {
 			// A new code starts a new attempt: the key from the earlier login may have aged out.
 			this.twoFactorPending = false;
 			this.readyPromise = undefined;
-			(await this.client()).authKey = null;
+			client.authKey = null;
 		}
 		try {
 			await this.ready();
@@ -100,7 +95,6 @@ export class PicnicSession implements Session {
 		} catch (error) {
 			if (!(error instanceof TwoFactorRequiredError)) throw error;
 		}
-		const client = await this.client();
 		await client.auth.generate2FACode("SMS");
 		return true;
 	}
@@ -144,15 +138,8 @@ export class PicnicSession implements Session {
 	private async authenticate(): Promise<PicnicApi> {
 		const client = await this.client();
 		if (this.twoFactorPending) throw new TwoFactorRequiredError();
-		if (client.authKey) {
-			try {
-				await client.user.getUserDetails();
-				return client;
-			} catch (error) {
-				if (!isAuthRejection(error)) throw error;
-				client.authKey = null;
-			}
-		}
+		if (client.authKey && (await this.savedKeyAccepted(client))) return client;
+		client.authKey = null;
 		const login = await client.auth.login(
 			this.options.username,
 			this.options.password,
@@ -163,7 +150,23 @@ export class PicnicSession implements Session {
 		return client;
 	}
 
-	private async readState(): Promise<z.infer<typeof storedState> | null> {
+	/**
+	 * Probes the saved key with a raw request because picnic-api's errors drop
+	 * the HTTP status. Only a 401 or 403 means the key is dead; a network error
+	 * or a Picnic 5xx propagates so the key survives for the next attempt.
+	 */
+	private async savedKeyAccepted(client: PicnicApi): Promise<boolean> {
+		const response = await fetch(`${client.url}/user`, {
+			headers: client.baseHeaders,
+		});
+		if (response.ok) return true;
+		if (response.status === 401 || response.status === 403) return false;
+		throw new Error(
+			`Picnic session check failed: ${response.status} ${response.statusText}`,
+		);
+	}
+
+	private async readState(): Promise<StoredState | null> {
 		try {
 			return storedState.parse(
 				JSON.parse(await readFile(this.options.stateFile, "utf8")),
@@ -175,15 +178,18 @@ export class PicnicSession implements Session {
 
 	/** Writes atomically through a temp file so a crash never truncates the state and the file is always created mode 600. */
 	private async save(client: PicnicApi): Promise<void> {
-		const state: z.infer<typeof storedState> = {
+		const state: StoredState = {
 			authKey: client.authKey,
 			deviceId: client.deviceId,
 			twoFactorPending: this.twoFactorPending,
 		};
 		const file = this.options.stateFile;
-		const tmp = `${file}.${process.pid}.tmp`;
+		const tmp = `${file}.${randomBytes(6).toString("hex")}.tmp`;
 		await mkdir(dirname(file), { recursive: true, mode: 0o700 });
 		await writeFile(tmp, JSON.stringify(state), { mode: 0o600, flag: "wx" });
-		await rename(tmp, file);
+		await rename(tmp, file).catch(async (error: unknown) => {
+			await unlink(tmp).catch(() => {});
+			throw error;
+		});
 	}
 }

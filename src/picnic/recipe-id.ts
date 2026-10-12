@@ -1,4 +1,6 @@
-import type { CountryCode } from "../config";
+import type { PicnicApi } from "../session";
+
+type CountryCode = PicnicApi["countryCode"];
 
 // A recipe id is a selling_group_id: 24 hex chars for Picnic's own recipes,
 // 32 for recipes the user created.

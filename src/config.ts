@@ -11,7 +11,7 @@ const envSchema = z
 		PICNIC_STATE_FILE: z.string().default(join(homedir(), ".picnic-mcp.json")),
 		PICNIC_HTTP_PORT: z.coerce.number().int().min(1).max(65535).optional(),
 		PICNIC_HTTP_HOST: z.string().default("127.0.0.1"),
-		PICNIC_HTTP_TOKEN: z.string().min(16).optional(),
+		PICNIC_HTTP_TOKEN: z.string().trim().min(16).optional(),
 	})
 	.refine(
 		(e) =>
@@ -42,12 +42,11 @@ const envSchema = z
 
 export type Config = z.output<typeof envSchema>;
 export type HttpConfig = NonNullable<Config["http"]>;
-export type CountryCode = Config["countryCode"];
 
 /**
  * Parses environment variables into the server configuration. Empty values
  * count as unset, since some hosts write `KEY=` for every optional variable.
- * Throws a readable error listing every invalid variable.
+ * Throws a readable error naming the invalid variables.
  */
 export function loadConfig(env: Record<string, string | undefined>): Config {
 	const present = Object.fromEntries(

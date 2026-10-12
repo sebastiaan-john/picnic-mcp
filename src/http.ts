@@ -15,7 +15,7 @@ function bearerMatches(header: string | null, token: string): boolean {
 /**
  * Serves /mcp over Streamable HTTP. Every request must carry the bearer
  * token, which also covers DNS rebinding and other cross-site attacks: a page
- * in a browser cannot attach it.
+ * in a browser does not know it.
  */
 export function serveHttp(factory: McpServerFactory, http: HttpConfig) {
 	const handler = createMcpHandler(factory, {
@@ -24,6 +24,8 @@ export function serveHttp(factory: McpServerFactory, http: HttpConfig) {
 	const server = Bun.serve({
 		hostname: http.host,
 		port: http.port,
+		// Picnic calls can take longer than Bun's 10 s default idle timeout.
+		idleTimeout: 0,
 		fetch(request) {
 			if (!bearerMatches(request.headers.get("authorization"), http.token)) {
 				return new Response(null, {

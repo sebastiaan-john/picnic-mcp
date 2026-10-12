@@ -9,13 +9,12 @@ import {
 	idArg,
 	json,
 	mutateCart,
+	NOT_IDEMPOTENT,
 	READ_ONLY,
 } from "./common";
 
 const productId = idArg("Product id such as 's1001524'");
 const countArg = z.number().int().min(1).default(1).describe("Number of units");
-const NOT_IDEMPOTENT =
-	"Not idempotent; each call applies again. If it fails, call picnic_get_cart before retrying.";
 
 export function registerCartTools(server: McpServer, session: Session) {
 	server.registerTool(

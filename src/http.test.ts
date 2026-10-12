@@ -1,4 +1,7 @@
-import { McpServer } from "@modelcontextprotocol/server";
+import {
+	LATEST_PROTOCOL_VERSION,
+	McpServer,
+} from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it } from "bun:test";
 import { serveHttp } from "./http";
 
@@ -9,7 +12,7 @@ const initialize = {
 	id: 1,
 	method: "initialize",
 	params: {
-		protocolVersion: "2026-07-28",
+		protocolVersion: LATEST_PROTOCOL_VERSION,
 		capabilities: {},
 		clientInfo: { name: "test", version: "0" },
 	},
@@ -48,7 +51,7 @@ describe("serveHttp", () => {
 			401,
 		);
 		expect((await post("/mcp", { authorization: token })).status).toBe(401);
-		expect((await post("/health", {})).status).toBe(401);
+		expect((await post("/anything", {})).status).toBe(401);
 		expect(
 			(await post("/other", { authorization: `Bearer ${token}` })).status,
 		).toBe(404);

@@ -21,6 +21,18 @@
 			}
 		],
 		"typescript/no-explicit-any": "error",
-		"typescript/ban-ts-comment": "error"
-	}
+		"typescript/ban-ts-comment": "error",
+		"no-underscore-dangle": "off"
+	},
+	"overrides": [
+		{
+			"files": [
+				"**/*.test.ts"
+			],
+			"rules": {
+				"unicorn/consistent-function-scoping": "off",
+				"no-shadow": "off"
+			}
+		}
+	]
 }

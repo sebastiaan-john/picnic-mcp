@@ -9,6 +9,7 @@ import {
 	IDEMPOTENT_WRITE,
 	json,
 	mutateCart,
+	NOT_IDEMPOTENT,
 	READ_ONLY,
 } from "./common";
 
@@ -141,8 +142,7 @@ export function registerRecipeTools(server: McpServer, session: Session) {
 		"picnic_add_recipe_to_cart",
 		{
 			title: "Add recipe to cart",
-			description:
-				"Adds a recipe's ingredients to the cart as one bundle, scaled to `portions`. Returns the assigned portions and whether any ingredient is unavailable; call picnic_get_cart to see the items. Not idempotent; each call applies again. If it fails, call picnic_get_cart before retrying.",
+			description: `Adds a recipe's ingredients to the cart as one bundle, scaled to \`portions\`. Returns the assigned portions and whether any ingredient is unavailable; call picnic_get_cart to see the items. ${NOT_IDEMPOTENT}`,
 			inputSchema: z.object({ recipe: recipeRef, portions: portionsArg }),
 			annotations: CART_MUTATION,
 		},
