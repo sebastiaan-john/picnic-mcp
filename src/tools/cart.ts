@@ -1,0 +1,135 @@
+import type { McpServer } from "@modelcontextprotocol/server";
+import * as z from "zod";
+import { cartView } from "../picnic/cart-view";
+import type { Session } from "../session";
+import {
+	CART_MUTATION,
+	DESTRUCTIVE,
+	IDEMPOTENT_WRITE,
+	idArg,
+	json,
+	mutateCart,
+	READ_ONLY,
+} from "./common";
+
+const productId = idArg("Product id such as 's1001524'");
+const countArg = z.number().int().min(1).default(1).describe("Number of units");
+const NOT_IDEMPOTENT =
+	"Not idempotent; each call applies again. If it fails, call picnic_get_cart before retrying.";
+
+export function registerCartTools(server: McpServer, session: Session) {
+	server.registerTool(
+		"picnic_get_cart",
+		{
+			title: "Get cart",
+			description:
+				"The current shopping cart: products with quantities and prices in cents, totals, and the selected delivery slot. Call this to verify the cart after a mutation reported an error.",
+			annotations: READ_ONLY,
+		},
+		() =>
+			session.call(async (client) =>
+				json(cartView(await client.cart.getCart())),
+			),
+	);
+
+	server.registerTool(
+		"picnic_add_to_cart",
+		{
+			title: "Add to cart",
+			description: `Adds \`count\` units of a product and returns the updated cart. ${NOT_IDEMPOTENT}`,
+			inputSchema: z.object({ product_id: productId, count: countArg }),
+			annotations: CART_MUTATION,
+		},
+		({ product_id, count }) =>
+			session.call((client) =>
+				mutateCart(`Adding ${count} x ${product_id}`, async () =>
+					json(cartView(await client.cart.addProductToCart(product_id, count))),
+				),
+			),
+	);
+
+	server.registerTool(
+		"picnic_remove_from_cart",
+		{
+			title: "Remove from cart",
+			description: `Removes \`count\` units of a product and returns the updated cart. ${NOT_IDEMPOTENT}`,
+			inputSchema: z.object({ product_id: productId, count: countArg }),
+			annotations: CART_MUTATION,
+		},
+		({ product_id, count }) =>
+			session.call((client) =>
+				mutateCart(`Removing ${count} x ${product_id}`, async () =>
+					json(
+						cartView(
+							await client.cart.removeProductFromCart(product_id, count),
+						),
+					),
+				),
+			),
+	);
+
+	server.registerTool(
+		"picnic_clear_cart",
+		{
+			title: "Clear cart",
+			description:
+				"Removes every product from the cart and returns the empty cart. Ask the user first.",
+			annotations: DESTRUCTIVE,
+		},
+		() =>
+			session.call(async (client) =>
+				json(cartView(await client.cart.clearCart())),
+			),
+	);
+
+	server.registerTool(
+		"picnic_get_delivery_slots",
+		{
+			title: "Get delivery slots",
+			description:
+				"Delivery windows: slot id, start and end, order cut-off, minimum order in cents, availability with reason, and which is selected. Pass a slot id to picnic_set_delivery_slot.",
+			annotations: READ_ONLY,
+		},
+		() =>
+			session.call(async (client) => {
+				const result = await client.cart.getDeliverySlots();
+				return json({
+					selected_slot_id: result.selected_slot?.slot_id ?? null,
+					slots: result.delivery_slots.map((slot) => ({
+						slot_id: slot.slot_id,
+						window_start: slot.window_start,
+						window_end: slot.window_end,
+						cut_off_time: slot.cut_off_time,
+						is_available: slot.is_available,
+						selected: slot.selected,
+						...(slot.minimum_order_value !== undefined && {
+							minimum_order_value: slot.minimum_order_value,
+						}),
+						...(slot.unavailability_reason && {
+							unavailability_reason: slot.unavailability_reason,
+						}),
+					})),
+				});
+			}),
+	);
+
+	server.registerTool(
+		"picnic_set_delivery_slot",
+		{
+			title: "Select delivery slot",
+			description:
+				"Selects the delivery window for the current cart and returns the updated cart. This does not place the order; checkout happens in the Picnic app.",
+			inputSchema: z.object({
+				slot_id: z
+					.string()
+					.min(1)
+					.describe("Slot id from picnic_get_delivery_slots"),
+			}),
+			annotations: IDEMPOTENT_WRITE,
+		},
+		({ slot_id }) =>
+			session.call(async (client) =>
+				json(cartView(await client.cart.setDeliverySlot(slot_id))),
+			),
+	);
+}

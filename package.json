@@ -1,0 +1,27 @@
+{
+	"name": "picnic-mcp",
+	"version": "0.1.0",
+	"description": "MCP server for Picnic grocery delivery: search, cart, deliveries, recipes",
+	"license": "MIT",
+	"type": "module",
+	"private": true,
+	"packageManager": "bun@1.4.2",
+	"scripts": {
+		"dev": "bun --watch src/index.ts",
+		"start": "bun src/index.ts",
+		"lint": "oxlint --fix --report-unused-disable-directives && oxfmt",
+		"check": "oxlint --deny-warnings --report-unused-disable-directives && oxfmt --check && tsc && bun test"
+	},
+	"dependencies": {
+		"@modelcontextprotocol/server": "^2.3.1",
+		"picnic-api": "^4.10.0",
+		"zod": "^4.6.5"
+	},
+	"devDependencies": {
+		"@modelcontextprotocol/client": "^2.3.1",
+		"@types/bun": "^1.4.2",
+		"oxfmt": "^0.72.0",
+		"oxlint": "^1.87.0",
+		"typescript": "^7.0.2"
+	}
+}
