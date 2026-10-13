@@ -73,6 +73,8 @@ Prices are in euro cents. Product ids look like `s1001524`.
 | `picnic_get_cart` | Cart contents, totals, selected slot |
 | `picnic_add_to_cart`, `picnic_remove_from_cart`, `picnic_clear_cart` | Cart mutations |
 | `picnic_get_delivery_slots`, `picnic_set_delivery_slot` | Delivery windows |
+| `picnic_start_checkout`, `picnic_confirm_order` | Place the order: start and initiate payment, the user pays at the returned URL, then confirm |
+| `picnic_get_checkout_status`, `picnic_cancel_checkout` | Payment status and backing out before confirming |
 | `picnic_get_deliveries`, `picnic_get_delivery` | Order history and one delivery in full |
 | `picnic_track_delivery` | ETA and route for a delivery on its way |
 | `picnic_cancel_delivery` | Cancel an upcoming delivery |
@@ -83,7 +85,9 @@ Prices are in euro cents. Product ids look like `s1001524`.
 | `picnic_get_account` | Account, address, household |
 | `picnic_send_2fa_code`, `picnic_verify_2fa_code` | Two-factor login |
 
-Adding or removing products and adding recipes is not idempotent. Picnic applies a mutation and renders the cart in the same request, so a failed call may still have changed the cart; the error says so and points at `picnic_get_cart` before any retry. Checkout and payment are not exposed; they stay in the Picnic app.
+Adding or removing products and adding recipes is not idempotent. Picnic applies a mutation and renders the cart in the same request, so a failed call may still have changed the cart; the error says so and points at `picnic_get_cart` before any retry.
+
+Placing an order follows the sequence the other unofficial Picnic clients use: `picnic_start_checkout` starts the checkout from the current cart and initiates payment, the user opens the returned payment URL and pays, and `picnic_confirm_order` checks that the payment finished before confirming. A blocking issue such as an alcohol age check comes back as an error with a `resolve_key` to pass on the next start. This path has not been run against a live account yet; the direct-debit case, where no bank page may appear, is untested.
 
 ## Development
 
