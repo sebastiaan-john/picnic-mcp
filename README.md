@@ -70,7 +70,7 @@ Prices are in euro cents. Product ids look like `s1001524`.
 | `picnic_get_product` | One product; `full=true` adds ingredient and nutrition sections, similar products, and price tiers |
 | `picnic_get_product_image` | PNG image by image id |
 | `picnic_get_promotions` | This week's deals |
-| `picnic_get_favorites` | Products bought before, by category, as on the Favorieten tab |
+| `picnic_get_favorites` | The account's favorites from the Favorieten tab |
 | `picnic_get_cart` | Cart contents, totals, selected slot |
 | `picnic_add_to_cart`, `picnic_remove_from_cart`, `picnic_clear_cart` | Cart mutations |
 | `picnic_get_delivery_slots`, `picnic_set_delivery_slot` | Delivery windows, the next three days by default |

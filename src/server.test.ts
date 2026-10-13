@@ -103,13 +103,27 @@ function fakeSession(
 			}),
 		},
 		app: {
+			getBootstrapData: async () => ({
+				tabs: [
+					{ analytics_id: "usuals", target: { reference: "usuals_page" } },
+				],
+			}),
 			getPage: async (pageId: string) => {
-				if (pageId === "purchases_page_no_products_root") {
+				if (pageId === "usuals_page") {
 					return {
 						children: [
-							{ type: "RICH_TEXT", textType: "HEADER4", markdown: "Fruit" },
 							{
-								sellingUnit: { id: "s7", name: "Bananen", display_price: 189 },
+								id: "vertical-selling-unit-tiles-section",
+								child: {
+									sellingUnit: { id: "s7", name: "Skyr", display_price: 299 },
+								},
+							},
+							{
+								sellingUnit: {
+									id: "s8",
+									name: "Suggestie",
+									display_price: 100,
+								},
 							},
 						],
 					};
@@ -449,26 +463,15 @@ describe("picnic-mcp server", () => {
 		).toEqual(["a", "b", "c"]);
 	});
 
-	it("lists favorites by category and filters by name", async () => {
+	it("lists favorites from the tab the bootstrap data points at", async () => {
 		await connect(fakeSession().session);
-		const all = await client.callTool({
+		const result = await client.callTool({
 			name: "picnic_get_favorites",
 			arguments: {},
 		});
-		expect(payload(all)).toEqual({
-			categories: ["Fruit"],
-			sections: [
-				{
-					category: "Fruit",
-					products: [{ product_id: "s7", name: "Bananen", price: 189 }],
-				},
-			],
+		expect(payload(result)).toEqual({
+			favorites: [{ product_id: "s7", name: "Skyr", price: 299 }],
 		});
-		const none = await client.callTool({
-			name: "picnic_get_favorites",
-			arguments: { category: "zuivel" },
-		});
-		expect(payload(none).sections).toEqual([]);
 	});
 
 	it("starts checkout with the cart's mts and returns the payment URL", async () => {
