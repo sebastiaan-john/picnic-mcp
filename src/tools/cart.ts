@@ -86,15 +86,35 @@ export function registerCartTools(server: McpServer, session: Session) {
 		{
 			title: "Get delivery slots",
 			description:
-				"Delivery windows: slot id, start and end, order cut-off, minimum order in cents, availability with reason, and which is selected. Pass a slot id to picnic_set_delivery_slot.",
+				"Delivery windows for the next `days` calendar days (Picnic offers about 15 a day for two weeks): slot id, start and end, order cut-off, minimum order in cents, availability with reason, and which is selected. Pass a slot id to picnic_set_delivery_slot.",
+			inputSchema: z.object({
+				days: z
+					.number()
+					.int()
+					.min(1)
+					.max(31)
+					.default(3)
+					.describe(
+						"How many calendar days of slots to return, from the first offered day",
+					),
+			}),
 			annotations: READ_ONLY,
 		},
-		() =>
+		({ days }) =>
 			session.call(async (client) => {
 				const result = await client.cart.getDeliverySlots();
+				const dates = [
+					...new Set(
+						result.delivery_slots.map((s) => s.window_start.slice(0, 10)),
+					),
+				].slice(0, days);
+				const slots = result.delivery_slots.filter((s) =>
+					dates.includes(s.window_start.slice(0, 10)),
+				);
 				return json({
 					selected_slot_id: result.selected_slot?.slot_id ?? null,
-					slots: result.delivery_slots.map((slot) => ({
+					days: dates,
+					slots: slots.map((slot) => ({
 						slot_id: slot.slot_id,
 						window_start: slot.window_start,
 						window_end: slot.window_end,
