@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/server";
+import { extractRecipeDetails } from "picnic-api/lib/domains/recipe/helpers";
 import * as z from "zod";
 import { recipeUrl, resolveRecipeId } from "../picnic/recipe-id";
 import { recipeTextFromPage } from "../picnic/recipe-page";
@@ -30,6 +31,29 @@ function resolve(client: PicnicApi, ref: string) {
 	return resolveRecipeId(ref, (url) => client.app.resolveDeeplink(url));
 }
 
+/**
+ * One page serves both the structured details and the readable text, so it
+ * is fetched once; picnic-api's getRecipe would fetch it again. Picnic may
+ * render a different portion count than asked (some counts are rejected), in
+ * which case the page is fetched again at the requested count, as picnic-api's
+ * getRecipe does, so the text and the product quantities come from one page.
+ */
+async function loadRecipe(client: PicnicApi, id: string, portions?: number) {
+	let page = await client.recipe.getRecipeDetailsPage(id, portions);
+	let details = extractRecipeDetails(id, page);
+	const requested = portions ?? details.defaultPortions;
+	if (details.portions !== requested) {
+		page = await client.recipe.getRecipeDetailsPage(id, requested);
+		details = extractRecipeDetails(id, page);
+	}
+	if (details.portions !== requested) {
+		throw new Error(
+			`Picnic rendered recipe ${id} at ${details.portions} portions instead of ${requested}; try another portion count.`,
+		);
+	}
+	return { details, text: recipeTextFromPage(page) };
+}
+
 export function registerRecipeTools(server: McpServer, session: Session) {
 	server.registerTool(
 		"picnic_get_recipe",
@@ -43,11 +67,7 @@ export function registerRecipeTools(server: McpServer, session: Session) {
 		({ recipe, portions }) =>
 			session.call(async (client) => {
 				const id = await resolve(client, recipe);
-				const details = await client.recipe.getRecipe(id, portions);
-				// Render the text at the portion count the structured details settled on, so amounts match.
-				const text = recipeTextFromPage(
-					await client.recipe.getRecipeDetailsPage(id, details.portions),
-				);
+				const { details, text } = await loadRecipe(client, id, portions);
 				return json({
 					id: details.id,
 					name: details.name,

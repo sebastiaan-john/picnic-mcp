@@ -19,6 +19,7 @@ interface Calls {
 	startCheckout: unknown[];
 	initiatePayment: unknown[];
 	confirmOrder: string[];
+	cancelCheckout: string[];
 	sent: number;
 	verified: string[];
 	recipe: unknown[][];
@@ -30,8 +31,11 @@ function fakeSession(
 		addFails?: boolean;
 		promoError?: Error;
 		cartCount?: number;
+		noSlot?: boolean;
 		checkoutIssue?: boolean;
 		checkoutStatus?: string;
+		paymentFails?: boolean;
+		confirmFails?: boolean;
 	} = {},
 ) {
 	const calls: Calls = {
@@ -39,6 +43,7 @@ function fakeSession(
 		startCheckout: [],
 		initiatePayment: [],
 		confirmOrder: [],
+		cancelCheckout: [],
 		sent: 0,
 		verified: [],
 		recipe: [],
@@ -63,26 +68,36 @@ function fakeSession(
 			getProductDetailsPage: async () => ({
 				layout: {
 					body: {
-						id: "product-details-page-root-main-container",
-						pml: {
-							component: {
-								children: [
-									{
-										type: "CONTAINER",
-										child: {
-											type: "RICH_TEXT",
-											textType: "HEADER1",
-											markdown: "#(#333333)Skyr#(#333333)",
-										},
-									},
-									{
-										type: "RICH_TEXT",
-										markdown: "Picnic",
-										textAttributes: { weight: "REGULAR" },
-									},
-								],
+						type: "STACK",
+						children: [
+							{
+								type: "RICH_TEXT",
+								textType: "HEADER1",
+								markdown: "Ontdek ook",
 							},
-						},
+							{
+								id: "product-details-page-root-main-container",
+								pml: {
+									component: {
+										children: [
+											{
+												type: "CONTAINER",
+												child: {
+													type: "RICH_TEXT",
+													textType: "HEADER1",
+													markdown: "#(#333333)Skyr#(#333333)",
+												},
+											},
+											{
+												type: "RICH_TEXT",
+												markdown: "Picnic",
+												textAttributes: { weight: "REGULAR" },
+											},
+										],
+									},
+								},
+							},
+						],
 					},
 				},
 			}),
@@ -113,7 +128,9 @@ function fakeSession(
 			getCart: async () => ({
 				mts: 1700000000000,
 				total_count: opts.cartCount ?? 3,
-				selected_slot: { slot_id: "slot-1", state: "EXPLICIT" },
+				selected_slot: opts.noSlot
+					? null
+					: { slot_id: "slot-1", state: "EXPLICIT" },
 			}),
 			startCheckout: async (input: unknown) => {
 				calls.startCheckout.push(input);
@@ -146,6 +163,7 @@ function fakeSession(
 			},
 			initiatePayment: async (...args: unknown[]) => {
 				calls.initiatePayment.push(args);
+				if (opts.paymentFails) throw new Error("502 Bad Gateway");
 				return {
 					payment_id: "pay-1",
 					transaction_id: "tx-1",
@@ -153,11 +171,18 @@ function fakeSession(
 					action: { type: "REDIRECT", redirect_url: "https://bank.test/pay" },
 				};
 			},
-			getCheckoutStatus: async () => ({
-				checkout_status: opts.checkoutStatus ?? "FINISHED",
+			getCheckoutStatus: async (transactionId: string) => ({
+				checkout_status:
+					transactionId === "tx-1"
+						? (opts.checkoutStatus ?? "FINISHED")
+						: "UNKNOWN",
 			}),
+			cancelCheckout: async (transactionId: string) => {
+				calls.cancelCheckout.push(transactionId);
+			},
 			confirmOrder: async (id: string) => {
 				calls.confirmOrder.push(id);
+				if (opts.confirmFails) throw new Error("socket hang up");
 				return {
 					order_id: id,
 					delivery_slot: {
@@ -189,32 +214,39 @@ function fakeSession(
 			getDeliveryScenario: async () => ({ eta: "x" }),
 		},
 		recipe: {
-			getRecipe: async (id: string, portions?: number) => {
-				calls.recipe.push(["getRecipe", id, portions]);
+			// Without a count Picnic renders the app's last-used 3, not the stored default 2.
+			getRecipeDetailsPage: async (id: string, portions?: number) => {
+				calls.recipe.push(["getRecipeDetailsPage", id, portions]);
+				const rendered = portions ?? 3;
 				return {
-					id: RECIPE_ID,
-					name: "Pasta",
-					portions: portions ?? 2,
-					defaultPortions: 2,
-					isSaved: false,
-					imageId: "recipes/abc",
-					ingredients: [
-						{
-							sellingUnitId: "s9",
-							name: null,
-							quantity: 2,
-							status: "ACTIVE",
-							checked: true,
-						},
-					],
-					note: null,
-				};
-			},
-			getRecipeDetailsPage: async (...args: unknown[]) => {
-				calls.recipe.push(["getRecipeDetailsPage", ...args]);
-				return {
-					type: "RICH_TEXT",
-					markdown: "Zutaten\nNudeln 500 g\nSchritt 1\nKochen.",
+					analytics: {
+						contexts: [
+							{
+								data: {
+									recipe_id: RECIPE_ID,
+									recipe_name: "Pasta",
+									portions: rendered,
+									selling_units: [
+										{
+											ingredient_id: "i1",
+											selling_unit_id: "s9",
+											quantity: rendered,
+										},
+									],
+								},
+							},
+						],
+					},
+					header: {
+						creator_type: "PICNIC",
+						sellable_name: "Pasta",
+						default_portions: 2,
+						is_saved: false,
+					},
+					body: {
+						type: "RICH_TEXT",
+						markdown: "Zutaten\nNudeln 500 g\nSchritt 1\nKochen.",
+					},
 				};
 			},
 		},
@@ -427,16 +459,90 @@ describe("picnic-mcp server", () => {
 		expect(calls.initiatePayment).toEqual([["order-1", "https://picnic.app/"]]);
 	});
 
-	it("refuses to start checkout on an empty cart", async () => {
-		const { session, calls } = fakeSession({ cartCount: 0 });
-		await connect(session);
+	it("refuses to start checkout on an empty cart or without a slot", async () => {
+		const empty = fakeSession({ cartCount: 0 });
+		await connect(empty.session);
 		const result = await client.callTool({
 			name: "picnic_start_checkout",
 			arguments: {},
 		});
 		expect(result.isError).toBe(true);
 		expect(text(result)).toMatch(/empty/);
-		expect(calls.startCheckout).toEqual([]);
+		expect(empty.calls.startCheckout).toEqual([]);
+		await close();
+
+		const unslotted = fakeSession({ noSlot: true });
+		await connect(unslotted.session);
+		const noSlot = await client.callTool({
+			name: "picnic_start_checkout",
+			arguments: {},
+		});
+		expect(text(noSlot)).toMatch(/picnic_set_delivery_slot/);
+		expect(unslotted.calls.startCheckout).toEqual([]);
+	});
+
+	it("names the started order when initiating payment fails", async () => {
+		await connect(fakeSession({ paymentFails: true }).session);
+		const result = await client.callTool({
+			name: "picnic_start_checkout",
+			arguments: {},
+		});
+		expect(result.isError).toBe(true);
+		expect(text(result)).toMatch(/order order-1/);
+		expect(text(result)).toMatch(/502 Bad Gateway/);
+	});
+
+	it("warns that a failed confirmation may still have placed the order", async () => {
+		const { session, calls } = fakeSession({ confirmFails: true });
+		await connect(session);
+		const result = await client.callTool({
+			name: "picnic_confirm_order",
+			arguments: { order_id: "order-1", transaction_id: "tx-1" },
+		});
+		expect(result.isError).toBe(true);
+		expect(text(result)).toMatch(/may still have been placed/);
+		expect(text(result)).toMatch(/picnic_get_deliveries/);
+		expect(calls.confirmOrder).toEqual(["order-1"]);
+	});
+
+	it("rejects a transaction paired with an order it did not pay for", async () => {
+		const { session, calls } = fakeSession();
+		await connect(session);
+		await client.callTool({ name: "picnic_start_checkout", arguments: {} });
+		const result = await client.callTool({
+			name: "picnic_confirm_order",
+			arguments: { order_id: "order-2", transaction_id: "tx-1" },
+		});
+		expect(result.isError).toBe(true);
+		expect(text(result)).toMatch(/pays for order order-1/);
+		expect(calls.confirmOrder).toEqual([]);
+	});
+
+	it("cancels a pending checkout but not a paid one", async () => {
+		const pendingFixture = fakeSession({ checkoutStatus: "PENDING" });
+		await connect(pendingFixture.session);
+		const cancelled = await client.callTool({
+			name: "picnic_cancel_checkout",
+			arguments: { transaction_id: "tx-1" },
+		});
+		expect(payload(cancelled)).toEqual({ cancelled: true });
+		expect(pendingFixture.calls.cancelCheckout).toEqual(["tx-1"]);
+		const status = await client.callTool({
+			name: "picnic_get_checkout_status",
+			arguments: { transaction_id: "tx-1" },
+		});
+		expect(payload(status)).toEqual({ checkout_status: "PENDING" });
+		await close();
+
+		const paid = fakeSession();
+		await connect(paid.session);
+		const refused = await client.callTool({
+			name: "picnic_cancel_checkout",
+			arguments: { transaction_id: "tx-1" },
+		});
+		expect(refused.isError).toBe(true);
+		expect(text(refused)).toMatch(/picnic_confirm_order/);
+		expect(paid.calls.cancelCheckout).toEqual([]);
 	});
 
 	it("surfaces a checkout issue with its resolve_key and passes it back", async () => {
@@ -574,7 +680,7 @@ describe("picnic-mcp server", () => {
 			},
 		});
 		expect(calls.recipe).toEqual([
-			["getRecipe", RECIPE_ID, undefined],
+			["getRecipeDetailsPage", RECIPE_ID, undefined],
 			["getRecipeDetailsPage", RECIPE_ID, 2],
 		]);
 		expect(payload(result)).toMatchObject({
@@ -599,9 +705,6 @@ describe("picnic-mcp server", () => {
 			name: "picnic_get_recipe",
 			arguments: { recipe: RECIPE_ID, portions: 4 },
 		});
-		expect(calls.recipe).toEqual([
-			["getRecipe", RECIPE_ID, 4],
-			["getRecipeDetailsPage", RECIPE_ID, 4],
-		]);
+		expect(calls.recipe).toEqual([["getRecipeDetailsPage", RECIPE_ID, 4]]);
 	});
 });

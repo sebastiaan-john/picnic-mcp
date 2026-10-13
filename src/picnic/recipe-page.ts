@@ -186,7 +186,6 @@ export function recipeTextFromPage(page: unknown): RecipeText {
 			instructionStart,
 			firstIndex(lines, STEP_LABEL_RE, ingredientStart + 1),
 			tipStart,
-			lines.length,
 		]);
 		for (const line of lines.slice(ingredientStart + 1, ingredientEnd)) {
 			if (isNoise(line)) continue;
@@ -204,7 +203,14 @@ export function recipeTextFromPage(page: unknown): RecipeText {
 		}
 	}
 
-	const instructionsEnd = tipStart >= 0 ? tipStart : lines.length;
+	const instructionsEnd = firstEnd(lines, [
+		tipStart,
+		firstIndex(
+			lines,
+			NOTE_HEADER_RE,
+			Math.max(instructionStart, firstStep) + 1,
+		),
+	]);
 	if (stepStarts.length > 0) {
 		for (const [n, start] of stepStarts.entries()) {
 			const stepEnd = Math.min(
@@ -225,7 +231,6 @@ export function recipeTextFromPage(page: unknown): RecipeText {
 	if (tipStart >= 0) {
 		const tipEnd = firstEnd(lines, [
 			firstIndex(lines, NOTE_HEADER_RE, tipStart + 1),
-			lines.length,
 		]);
 		result.tips = lines
 			.slice(tipStart + 1, tipEnd)

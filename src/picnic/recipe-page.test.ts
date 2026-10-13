@@ -178,6 +178,21 @@ describe("recipeTextFromPage", () => {
 		expect(text.tips).toEqual(["Extra lekker met kaas."]);
 	});
 
+	it("ends the last step at the note editor when there are no tips", () => {
+		const text = recipeTextFromPage(
+			page([
+				"Ingrediënten",
+				"Gnocchi 500 g",
+				"Stap 1",
+				"Bakken.",
+				"Notitie",
+				"Voeg toe...",
+			]),
+		);
+		expect(text.instructions).toEqual(["Bakken."]);
+		expect(text.tips).toEqual([]);
+	});
+
 	it("ignores a tip header that precedes the recipe body", () => {
 		const text = recipeTextFromPage(
 			page([
