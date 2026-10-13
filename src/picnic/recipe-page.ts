@@ -27,6 +27,8 @@ const INSTRUCTION_HEADER_RE =
 	/^(zubereitung(sschritte)?|anleitung|so wird.?s gemacht|bereiding(swijze)?|zo maak je het|pr[eé]paration|instructions?)$/i;
 const STEP_LABEL_RE = /^(schritt|stap|[ée]tape|step)\s*\d+$/i;
 const TIP_HEADER_RE = /^(tipps?|tips?|astuces?)$/i;
+/** The personal note editor that follows the tips, then a card for the recipe itself. */
+const NOTE_HEADER_RE = /^(notiz(en)?|notitie|notes?)$/i;
 const TIME_RE = /\b\d+\s*(?:min(?:uten|utes)?|std|uur|h)\b/i;
 const TOTAL_TIME_RE = /\b(gesamt\w*|insgesamt|total\w*|totaal)\b/i;
 /** A standalone portion count such as "2 Portionen", shown as UI chrome, not content. */
@@ -42,6 +44,7 @@ const BUTTON_WORDS = new Set([
 	"hinzufügen",
 	"view",
 	"add",
+	"bekijk",
 	"bekijken",
 	"toevoegen",
 	"voir",
@@ -220,7 +223,13 @@ export function recipeTextFromPage(page: unknown): RecipeText {
 	}
 
 	if (tipStart >= 0) {
-		result.tips = lines.slice(tipStart + 1).filter((line) => !isNoise(line));
+		const tipEnd = firstEnd(lines, [
+			firstIndex(lines, NOTE_HEADER_RE, tipStart + 1),
+			lines.length,
+		]);
+		result.tips = lines
+			.slice(tipStart + 1, tipEnd)
+			.filter((line) => !isNoise(line));
 	}
 
 	return result;

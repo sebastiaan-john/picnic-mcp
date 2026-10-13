@@ -60,6 +60,32 @@ function fakeSession(
 				},
 			],
 			getImageAsDataUri: async () => "data:image/png;base64,AQID",
+			getProductDetailsPage: async () => ({
+				layout: {
+					body: {
+						id: "product-details-page-root-main-container",
+						pml: {
+							component: {
+								children: [
+									{
+										type: "CONTAINER",
+										child: {
+											type: "RICH_TEXT",
+											textType: "HEADER1",
+											markdown: "#(#333333)Skyr#(#333333)",
+										},
+									},
+									{
+										type: "RICH_TEXT",
+										markdown: "Picnic",
+										textAttributes: { weight: "REGULAR" },
+									},
+								],
+							},
+						},
+					},
+				},
+			}),
 		},
 		app: {
 			getPage: async () => {
@@ -68,6 +94,22 @@ function fakeSession(
 			},
 		},
 		cart: {
+			getDeliverySlots: async () => ({
+				selected_slot: { slot_id: "b" },
+				delivery_slots: [
+					"2026-10-14",
+					"2026-10-14",
+					"2026-10-15",
+					"2026-10-16",
+				].map((day, i) => ({
+					slot_id: String.fromCharCode(97 + i),
+					window_start: `${day}T08:00:00.000+02:00`,
+					window_end: `${day}T09:00:00.000+02:00`,
+					cut_off_time: `${day}T13:00:00.000+02:00`,
+					is_available: true,
+					selected: i === 1,
+				})),
+			}),
 			getCart: async () => ({
 				mts: 1700000000000,
 				total_count: opts.cartCount ?? 3,
@@ -337,6 +379,31 @@ describe("picnic-mcp server", () => {
 		expect(text(result)).toMatch(/Client version is required/);
 		expect(text(result)).toMatch(/picnic_get_cart/);
 		expect(calls.addProductToCart).toEqual([["s1", 2]]);
+	});
+
+	it("finds the product name when Picnic wraps the header", async () => {
+		await connect(fakeSession().session);
+		const result = await client.callTool({
+			name: "picnic_get_product",
+			arguments: { product_id: "s1014487" },
+		});
+		expect(result.isError).toBeFalsy();
+		expect(payload(result)).toMatchObject({ name: "Skyr", brand: "Picnic" });
+	});
+
+	it("limits delivery slots to the first offered days", async () => {
+		await connect(fakeSession().session);
+		const twoDays = await client.callTool({
+			name: "picnic_get_delivery_slots",
+			arguments: { days: 2 },
+		});
+		expect(payload(twoDays)).toMatchObject({
+			selected_slot_id: "b",
+			days: ["2026-10-14", "2026-10-15"],
+		});
+		expect(
+			payload(twoDays).slots.map((s: { slot_id: string }) => s.slot_id),
+		).toEqual(["a", "b", "c"]);
 	});
 
 	it("starts checkout with the cart's mts and returns the payment URL", async () => {

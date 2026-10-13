@@ -160,6 +160,24 @@ describe("recipeTextFromPage", () => {
 		]);
 	});
 
+	it("ends the tips at the note editor that follows them", () => {
+		const text = recipeTextFromPage(
+			page([
+				"Ingrediënten",
+				"Gnocchi 500 g",
+				"Stap 1",
+				"Bakken.",
+				"Tip",
+				"Extra lekker met kaas.",
+				"Notitie",
+				"Voeg toe...",
+				"Gnocchi in romige paprikasaus",
+				"Bekijk",
+			]),
+		);
+		expect(text.tips).toEqual(["Extra lekker met kaas."]);
+	});
+
 	it("ignores a tip header that precedes the recipe body", () => {
 		const text = recipeTextFromPage(
 			page([

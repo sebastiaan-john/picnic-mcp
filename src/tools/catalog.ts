@@ -1,11 +1,37 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import PicnicClient from "picnic-api";
+import { extractProductDetails } from "picnic-api/lib/domains/catalog/helpers";
 import * as z from "zod";
 import { promotionsFromPage } from "../picnic/promotions";
 import type { Session } from "../session";
 import { idArg, json, paginate, paginationArgs, READ_ONLY } from "./common";
 
 const PROMOTIONS_PAGE = "promo-page-all-promos-redirect";
+
+/**
+ * picnic-api 4.10 reads the product name from a HEADER1 node among the main
+ * container's direct children, but Picnic now wraps that header in an
+ * accessibility container, so the name comes back empty. Find it at any depth.
+ */
+function headerText(node: unknown): string | null {
+	if (Array.isArray(node)) {
+		for (const child of node) {
+			const found = headerText(child);
+			if (found) return found;
+		}
+		return null;
+	}
+	if (typeof node !== "object" || node === null) return null;
+	const record = node as Record<string, unknown>;
+	if (record.textType === "HEADER1" && typeof record.markdown === "string") {
+		return record.markdown.replace(/#\(#[0-9a-fA-F]{6}\)/g, "").trim();
+	}
+	for (const value of Object.values(record)) {
+		const found = headerText(value);
+		if (found) return found;
+	}
+	return null;
+}
 const productId = idArg("Product id such as 's1001524'");
 
 export function registerCatalogTools(server: McpServer, session: Session) {
@@ -65,7 +91,9 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		},
 		({ product_id, full }) =>
 			session.call(async (client) => {
-				const details = await client.catalog.getProductDetails(product_id);
+				const page = await client.catalog.getProductDetailsPage(product_id);
+				const details = extractProductDetails(product_id, page);
+				if (!details.name) details.name = headerText(page) ?? "";
 				if (full) return json(details);
 				const { infoSections, similarProducts, priceRanges, ...summary } =
 					details;

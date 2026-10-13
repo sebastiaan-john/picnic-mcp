@@ -72,7 +72,7 @@ Prices are in euro cents. Product ids look like `s1001524`.
 | `picnic_get_promotions` | This week's deals |
 | `picnic_get_cart` | Cart contents, totals, selected slot |
 | `picnic_add_to_cart`, `picnic_remove_from_cart`, `picnic_clear_cart` | Cart mutations |
-| `picnic_get_delivery_slots`, `picnic_set_delivery_slot` | Delivery windows |
+| `picnic_get_delivery_slots`, `picnic_set_delivery_slot` | Delivery windows, the next three days by default |
 | `picnic_start_checkout`, `picnic_confirm_order` | Place the order: start and initiate payment, the user pays at the returned URL, then confirm |
 | `picnic_get_checkout_status`, `picnic_cancel_checkout` | Payment status and backing out before confirming |
 | `picnic_get_deliveries`, `picnic_get_delivery` | Order history and one delivery in full |
