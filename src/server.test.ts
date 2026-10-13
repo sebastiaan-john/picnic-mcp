@@ -103,7 +103,17 @@ function fakeSession(
 			}),
 		},
 		app: {
-			getPage: async () => {
+			getPage: async (pageId: string) => {
+				if (pageId === "purchases_page_no_products_root") {
+					return {
+						children: [
+							{ type: "RICH_TEXT", textType: "HEADER4", markdown: "Fruit" },
+							{
+								sellingUnit: { id: "s7", name: "Bananen", display_price: 189 },
+							},
+						],
+					};
+				}
 				if (opts.promoError) throw opts.promoError;
 				return {};
 			},
@@ -311,6 +321,7 @@ describe("picnic-mcp server", () => {
 			"picnic_get_deliveries",
 			"picnic_get_delivery",
 			"picnic_get_delivery_slots",
+			"picnic_get_favorites",
 			"picnic_get_product",
 			"picnic_get_product_image",
 			"picnic_get_promotions",
@@ -436,6 +447,28 @@ describe("picnic-mcp server", () => {
 		expect(
 			payload(twoDays).slots.map((s: { slot_id: string }) => s.slot_id),
 		).toEqual(["a", "b", "c"]);
+	});
+
+	it("lists favorites by category and filters by name", async () => {
+		await connect(fakeSession().session);
+		const all = await client.callTool({
+			name: "picnic_get_favorites",
+			arguments: {},
+		});
+		expect(payload(all)).toEqual({
+			categories: ["Fruit"],
+			sections: [
+				{
+					category: "Fruit",
+					products: [{ product_id: "s7", name: "Bananen", price: 189 }],
+				},
+			],
+		});
+		const none = await client.callTool({
+			name: "picnic_get_favorites",
+			arguments: { category: "zuivel" },
+		});
+		expect(payload(none).sections).toEqual([]);
 	});
 
 	it("starts checkout with the cart's mts and returns the payment URL", async () => {

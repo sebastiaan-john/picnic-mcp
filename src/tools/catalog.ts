@@ -6,11 +6,13 @@ import {
 	stripColorMarkup,
 } from "picnic-api/lib/domains/catalog/helpers";
 import * as z from "zod";
+import { favoritesFromPage } from "../picnic/favorites";
 import { promotionsFromPage } from "../picnic/promotions";
 import type { Session } from "../session";
 import { idArg, json, paginate, paginationArgs, READ_ONLY } from "./common";
 
 const PROMOTIONS_PAGE = "promo-page-all-promos-redirect";
+const FAVORITES_PAGE = "purchases_page_no_products_root";
 
 /**
  * picnic-api 4.10 reads the product name from a HEADER1 node among the main
@@ -111,6 +113,40 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 				const { infoSections, similarProducts, priceRanges, ...summary } =
 					details;
 				return json(summary);
+			}),
+	);
+
+	server.registerTool(
+		"picnic_get_favorites",
+		{
+			title: "Get favorites",
+			description:
+				"The Favorieten tab: products the account bought before, grouped by category as Picnic shows them, with up to twelve products per category plus a mixed first shelf. Each product has id, name, price in cents, and unit. Filter by category name to keep the result small.",
+			inputSchema: z.object({
+				category: z
+					.string()
+					.min(1)
+					.optional()
+					.describe(
+						"Case-insensitive substring of a category name such as 'fruit' or 'zuivel'",
+					),
+			}),
+			annotations: READ_ONLY,
+		},
+		({ category }) =>
+			session.call(async (client) => {
+				const sections = favoritesFromPage(
+					await client.app.getPage(FAVORITES_PAGE),
+				);
+				const needle = category?.toLowerCase();
+				return json({
+					categories: sections.map((section) => section.category),
+					sections: needle
+						? sections.filter((section) =>
+								section.category.toLowerCase().includes(needle),
+							)
+						: sections,
+				});
 			}),
 	);
 
