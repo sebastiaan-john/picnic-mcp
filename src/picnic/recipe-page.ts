@@ -9,7 +9,7 @@
  * ones that sit next to its step labels.
  */
 
-export interface RecipeText {
+interface RecipeText {
 	prepTime: string | null;
 	totalTime: string | null;
 	/** Ingredient lines with amounts, e.g. "Paprika 1 Stk.". */
@@ -116,9 +116,8 @@ function isNoise(line: string): boolean {
 	);
 }
 
-/** Smallest non-negative candidate; callers always include `lines.length`. */
-function firstEnd(candidates: number[]): number {
-	return Math.min(...candidates.filter((c) => c >= 0));
+function firstEnd(lines: string[], candidates: number[]): number {
+	return Math.min(lines.length, ...candidates.filter((c) => c >= 0));
 }
 
 function firstIndex(lines: string[], re: RegExp, from: number): number {
@@ -151,21 +150,23 @@ export function recipeTextFromPage(page: unknown): RecipeText {
 		ingredientStart = i;
 		if (firstStep < 0) break;
 	}
-	const instructionStart = firstIndex(
+	// An instruction header after the first step belongs to a product card.
+	const instructionHeader = firstIndex(
 		lines,
 		INSTRUCTION_HEADER_RE,
 		ingredientStart + 1,
 	);
+	const instructionStart =
+		firstStep >= 0 && instructionHeader > firstStep ? -1 : instructionHeader;
 	const bodyStart = Math.max(ingredientStart, instructionStart, firstStep);
 	const tipStart =
 		bodyStart >= 0 ? firstIndex(lines, TIP_HEADER_RE, bodyStart + 1) : -1;
 
 	// Timing sits above the ingredients; a step that mentions minutes is not the recipe time.
-	const metaEnd = firstEnd([
+	const metaEnd = firstEnd(lines, [
 		ingredientStart,
 		instructionStart,
 		firstStep,
-		lines.length,
 	]);
 	for (let i = 0; i < metaEnd; i++) {
 		const line = lines[i] ?? "";
@@ -178,7 +179,7 @@ export function recipeTextFromPage(page: unknown): RecipeText {
 	}
 
 	if (ingredientStart >= 0) {
-		const ingredientEnd = firstEnd([
+		const ingredientEnd = firstEnd(lines, [
 			instructionStart,
 			firstIndex(lines, STEP_LABEL_RE, ingredientStart + 1),
 			tipStart,

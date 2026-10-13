@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type Cart, cartView } from "./cart-view";
 
-export function cart(overrides: Partial<Cart>): Cart {
+function cart(overrides: Partial<Cart>): Cart {
 	return {
 		type: "ORDER",
 		id: "shopping_cart",

@@ -80,12 +80,12 @@ function fakeSession(
 			getDeliveryScenario: async () => ({ eta: "x" }),
 		},
 		recipe: {
-			getRecipe: async (...args: unknown[]) => {
-				calls.recipe.push(["getRecipe", ...args]);
+			getRecipe: async (id: string, portions?: number) => {
+				calls.recipe.push(["getRecipe", id, portions]);
 				return {
 					id: RECIPE_ID,
 					name: "Pasta",
-					portions: 4,
+					portions: portions ?? 2,
 					defaultPortions: 2,
 					isSaved: false,
 					imageId: "recipes/abc",
@@ -349,17 +349,16 @@ describe("picnic-mcp server", () => {
 			name: "picnic_get_recipe",
 			arguments: {
 				recipe: `https://picnic.app/nl/recepten/${RECIPE_ID}/pasta`,
-				portions: 4,
 			},
 		});
 		expect(calls.recipe).toEqual([
-			["getRecipe", RECIPE_ID, 4],
-			["getRecipeDetailsPage", RECIPE_ID, 4],
+			["getRecipe", RECIPE_ID, undefined],
+			["getRecipeDetailsPage", RECIPE_ID, 2],
 		]);
 		expect(payload(result)).toMatchObject({
 			id: RECIPE_ID,
 			url: `https://picnic.app/nl/recepten/${RECIPE_ID}`,
-			portions: 4,
+			portions: 2,
 			default_portions: 2,
 			ingredients: [
 				{
@@ -372,5 +371,15 @@ describe("picnic-mcp server", () => {
 			ingredient_lines: ["Nudeln 500 g"],
 			instructions: ["Kochen."],
 		});
+
+		calls.recipe.length = 0;
+		await client.callTool({
+			name: "picnic_get_recipe",
+			arguments: { recipe: RECIPE_ID, portions: 4 },
+		});
+		expect(calls.recipe).toEqual([
+			["getRecipe", RECIPE_ID, 4],
+			["getRecipeDetailsPage", RECIPE_ID, 4],
+		]);
 	});
 });

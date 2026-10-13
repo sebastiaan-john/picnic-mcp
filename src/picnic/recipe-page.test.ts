@@ -137,6 +137,29 @@ describe("recipeTextFromPage", () => {
 		expect(text.tips).toEqual(["Parmesan dazu."]);
 	});
 
+	it("ignores a product card's instruction tab after the steps so the tips survive", () => {
+		const text = recipeTextFromPage(
+			page([
+				"Zutaten",
+				"Paprika 1 Stk.",
+				"Schritt 1",
+				"Waschen.",
+				"Tipp",
+				"Dazu Salat.",
+				"Feta",
+				"Zubereitung",
+				"Kühl lagern",
+			]),
+		);
+		expect(text.instructions).toEqual(["Waschen."]);
+		expect(text.tips).toEqual([
+			"Dazu Salat.",
+			"Feta",
+			"Zubereitung",
+			"Kühl lagern",
+		]);
+	});
+
 	it("ignores a tip header that precedes the recipe body", () => {
 		const text = recipeTextFromPage(
 			page([

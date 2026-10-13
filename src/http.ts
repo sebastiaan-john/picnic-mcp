@@ -15,7 +15,7 @@ function bearerMatches(header: string | null, token: string): boolean {
 /**
  * Serves /mcp over Streamable HTTP. Every request must carry the bearer
  * token, which also covers DNS rebinding and other cross-site attacks: a page
- * in a browser cannot attach it.
+ * in a browser does not know it.
  */
 export function serveHttp(factory: McpServerFactory, http: HttpConfig) {
 	const handler = createMcpHandler(factory, {
@@ -34,6 +34,9 @@ export function serveHttp(factory: McpServerFactory, http: HttpConfig) {
 			if (new URL(request.url).pathname !== "/mcp") {
 				return new Response(null, { status: 404 });
 			}
+			// Picnic calls can outlast Bun's 10 s idle timeout; lift it only once the
+			// caller is authenticated, so idle anonymous sockets still get closed.
+			server.timeout(request, 0);
 			return handler.fetch(request);
 		},
 	});

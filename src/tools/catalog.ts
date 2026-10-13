@@ -78,7 +78,7 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		{
 			title: "Get product image",
 			description:
-				"A product image as PNG. `image_id` comes from search, cart, or promotion results, or `imageIds` in product details.",
+				"A product image as PNG. `image_id` comes from search, cart, promotion, or recipe results, or `imageIds` in product details.",
 			inputSchema: z.object({
 				image_id: z
 					.string()
@@ -87,7 +87,7 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 						"Image ids contain only letters, digits, _, - and /",
 					)
 					.describe(
-						"Image id from search, cart, promotions, or product details",
+						"Image id from search, cart, promotions, recipes, or product details",
 					),
 				size: z
 					.enum(["tiny", "small", "medium", "large", "extra-large"])

@@ -14,14 +14,14 @@ MCP server (SDK v2, `@modelcontextprotocol/server`) exposing a Picnic grocery ac
 - `src/config.ts` parses env with zod; the only place env is read. Types are inferred from the schema.
 - `src/session.ts` owns the one picnic-api client: lazy memoized login, 2FA state, atomic state file.
 - `src/server.ts` builds an `McpServer` per connection or request from `src/tools/*`.
-- `src/tools/*.ts` one file per Picnic domain. Every tool except the 2FA pair runs through `session.call(client => ...)`, which re-authenticates on the next call after Picnic rejects the key.
+- `src/tools/*.ts` one file per Picnic domain. Every tool except the 2FA pair runs through `session.call(client => ...)`, which re-checks the saved key on the next call after any Picnic error.
 - `src/picnic/*.ts` pure mappers over Picnic responses, page trees, and ids, each with a colocated test.
 - `src/http.ts` `Bun.serve` around `createMcpHandler` with a mandatory bearer token.
 
 ## Rules
 
 - stdout is the MCP channel on stdio. Log with `console.error` only.
-- Tools return `json(...)` text blocks (the image tool returns image content) and throw plain `Error`s; the SDK turns them into `isError` results. Writes that add or remove cart contents go through `mutateCart`, with the response mapping inside the callback, so the error warns that a retry can double-apply.
+- Tools return `json(...)` text blocks (the image tool returns image content) and throw plain `Error`s; the SDK turns them into `isError` results. Non-idempotent cart writes (adding or removing products, adding a recipe) go through `mutateCart`, with the response mapping inside the callback, so the error warns that a retry can double-apply. Clearing the cart and removing a recipe are idempotent and stay outside it.
 - Ids that picnic-api splices into request paths go through `idArg` so `../` cannot reach another endpoint.
 - Every tool carries `annotations` and every argument a `.describe()`; the server test enforces both.
 - Prefer picnic-api methods over `sendRequest`; add a page-tree extractor only when picnic-api has no structured method.
