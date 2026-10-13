@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import PicnicClient from "picnic-api";
-import { extractProductDetails } from "picnic-api/lib/domains/catalog/helpers";
+import {
+	extractProductDetails,
+	findById,
+	stripColorMarkup,
+} from "picnic-api/lib/domains/catalog/helpers";
 import * as z from "zod";
 import { promotionsFromPage } from "../picnic/promotions";
 import type { Session } from "../session";
@@ -24,7 +28,7 @@ function headerText(node: unknown): string | null {
 	if (typeof node !== "object" || node === null) return null;
 	const record = node as Record<string, unknown>;
 	if (record.textType === "HEADER1" && typeof record.markdown === "string") {
-		return record.markdown.replace(/#\(#[0-9a-fA-F]{6}\)/g, "").trim();
+		return stripColorMarkup(record.markdown).trim();
 	}
 	for (const value of Object.values(record)) {
 		const found = headerText(value);
@@ -32,6 +36,7 @@ function headerText(node: unknown): string | null {
 	}
 	return null;
 }
+
 const productId = idArg("Product id such as 's1001524'");
 
 export function registerCatalogTools(server: McpServer, session: Session) {
@@ -93,7 +98,15 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 			session.call(async (client) => {
 				const page = await client.catalog.getProductDetailsPage(product_id);
 				const details = extractProductDetails(product_id, page);
-				if (!details.name) details.name = headerText(page) ?? "";
+				if (!details.name) {
+					details.name =
+						headerText(
+							findById(
+								page.layout.body,
+								"product-details-page-root-main-container",
+							),
+						) ?? "";
+				}
 				if (full) return json(details);
 				const { infoSections, similarProducts, priceRanges, ...summary } =
 					details;
