@@ -1,4 +1,4 @@
-interface FavoriteProduct {
+export interface FavoriteProduct {
 	product_id: string;
 	name: string;
 	/** Price in cents. */
@@ -6,15 +6,29 @@ interface FavoriteProduct {
 	unit?: string;
 }
 
-export interface FavoriteSection {
-	category: string;
-	products: FavoriteProduct[];
-}
-
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+const FAVORITES_SECTION = "vertical-selling-unit-tiles-section";
+
+/**
+ * The Favorieten tab's page reference, from the app's navigation tabs, so
+ * the lookup follows Picnic if the reference changes with the account's
+ * purchase history. Null when no tab is the usuals tab.
+ */
+export function favoritesPageReference(bootstrap: unknown): string | null {
+	if (!isRecord(bootstrap) || !Array.isArray(bootstrap.tabs)) return null;
+	for (const tab of bootstrap.tabs) {
+		if (!isRecord(tab) || tab.analytics_id !== "usuals") continue;
+		const target = tab.target;
+		if (isRecord(target) && typeof target.reference === "string") {
+			return target.reference;
+		}
+	}
+	return null;
 }
 
 function productFromTile(node: UnknownRecord): FavoriteProduct | null {
@@ -38,34 +52,37 @@ function productFromTile(node: UnknownRecord): FavoriteProduct | null {
 }
 
 /**
- * The Favorieten tab (page reference `purchases_page_no_products_root`) lists
- * products the account bought before as shelves: a HEADER4 title followed by
- * up to twelve product tiles. Tiles before the first header belong to the
- * cart, not to a shelf, and are skipped. Image ids are left out to keep the
- * list small; picnic_get_product has them.
+ * The Favorieten tab lists the account's own favorites as a vertical tile
+ * section under the page header. The horizontal shelves below it ("Mix van
+ * alle favorieten" and per-category shelves) are Picnic's suggestions, not
+ * the user's, and are left out.
  */
-export function favoritesFromPage(page: unknown): FavoriteSection[] {
-	const sections: FavoriteSection[] = [];
-	let current: FavoriteSection | null = null;
+export function favoritesFromPage(page: unknown): FavoriteProduct[] {
+	const products: FavoriteProduct[] = [];
 
-	const visit = (node: unknown): void => {
+	const collect = (node: unknown): void => {
 		if (Array.isArray(node)) {
-			for (const child of node) visit(child);
+			for (const child of node) collect(child);
 			return;
 		}
 		if (!isRecord(node)) return;
-		if (node.textType === "HEADER4" && typeof node.markdown === "string") {
-			current = {
-				category: node.markdown.replace(/#\(#?[A-Za-z0-9]+\)/g, "").trim(),
-				products: [],
-			};
-			sections.push(current);
-		}
 		const product = productFromTile(node);
-		if (product && current) current.products.push(product);
-		for (const value of Object.values(node)) visit(value);
+		if (product) products.push(product);
+		for (const value of Object.values(node)) collect(value);
+	};
+	const find = (node: unknown): void => {
+		if (Array.isArray(node)) {
+			for (const child of node) find(child);
+			return;
+		}
+		if (!isRecord(node)) return;
+		if (node.id === FAVORITES_SECTION) {
+			collect(node);
+			return;
+		}
+		for (const value of Object.values(node)) find(value);
 	};
 
-	visit(page);
-	return sections.filter((section) => section.products.length > 0);
+	find(page);
+	return products;
 }
