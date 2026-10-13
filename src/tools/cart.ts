@@ -117,7 +117,7 @@ export function registerCartTools(server: McpServer, session: Session) {
 		{
 			title: "Select delivery slot",
 			description:
-				"Selects the delivery window for the current cart and returns the updated cart. This does not place the order; checkout happens in the Picnic app.",
+				"Selects the delivery window for the current cart and returns the updated cart. This does not place the order; see picnic_start_checkout.",
 			inputSchema: z.object({
 				slot_id: z
 					.string()

@@ -16,6 +16,9 @@ const RECIPE_ID = "0123456789abcdef01234567";
 
 interface Calls {
 	addProductToCart: Array<[string, number]>;
+	startCheckout: unknown[];
+	initiatePayment: unknown[];
+	confirmOrder: string[];
 	sent: number;
 	verified: string[];
 	recipe: unknown[][];
@@ -26,10 +29,16 @@ function fakeSession(
 		twoFactorPending?: boolean;
 		addFails?: boolean;
 		promoError?: Error;
+		cartCount?: number;
+		checkoutIssue?: boolean;
+		checkoutStatus?: string;
 	} = {},
 ) {
 	const calls: Calls = {
 		addProductToCart: [],
+		startCheckout: [],
+		initiatePayment: [],
+		confirmOrder: [],
 		sent: 0,
 		verified: [],
 		recipe: [],
@@ -59,6 +68,64 @@ function fakeSession(
 			},
 		},
 		cart: {
+			getCart: async () => ({
+				mts: 1700000000000,
+				total_count: opts.cartCount ?? 3,
+				selected_slot: { slot_id: "slot-1", state: "EXPLICIT" },
+			}),
+			startCheckout: async (input: unknown) => {
+				calls.startCheckout.push(input);
+				if (opts.checkoutIssue) {
+					throw new PicnicClient.CheckoutIssueError({
+						code: "CART_HAS_ISSUES",
+						title: "Age check",
+						issueMessage: "Confirm you are 18 or older.",
+						resolveKey: "age_verified",
+						blocking: true,
+						issueType: "LEGACY_ALCOHOL_AGE_VERIFICATION_REQUIRED",
+					});
+				}
+				return {
+					order_id: "order-1",
+					total_price: 2599,
+					total_count: 3,
+					total_deposit: 25,
+					total_savings: 0,
+					transaction_expiry: "2026-10-13T10:00:00Z",
+					delivery_slots: [
+						{
+							slot_id: "slot-1",
+							window_start: "2026-10-14T08:00:00Z",
+							window_end: "2026-10-14T10:00:00Z",
+							selected: true,
+						},
+					],
+				};
+			},
+			initiatePayment: async (...args: unknown[]) => {
+				calls.initiatePayment.push(args);
+				return {
+					payment_id: "pay-1",
+					transaction_id: "tx-1",
+					issuer_authentication_url: "https://bank.test/pay",
+					action: { type: "REDIRECT", redirect_url: "https://bank.test/pay" },
+				};
+			},
+			getCheckoutStatus: async () => ({
+				checkout_status: opts.checkoutStatus ?? "FINISHED",
+			}),
+			confirmOrder: async (id: string) => {
+				calls.confirmOrder.push(id);
+				return {
+					order_id: id,
+					delivery_slot: {
+						slot_id: "slot-1",
+						window_start: "2026-10-14T08:00:00Z",
+						window_end: "2026-10-14T10:00:00Z",
+					},
+					analytics: null,
+				};
+			},
 			addProductToCart: async (id: string, count: number) => {
 				calls.addProductToCart.push([id, count]);
 				if (opts.addFails) throw new Error("Client version is required");
@@ -160,10 +227,13 @@ describe("picnic-mcp server", () => {
 		expect(tools.map((t) => t.name).toSorted()).toEqual([
 			"picnic_add_recipe_to_cart",
 			"picnic_add_to_cart",
+			"picnic_cancel_checkout",
 			"picnic_cancel_delivery",
 			"picnic_clear_cart",
+			"picnic_confirm_order",
 			"picnic_get_account",
 			"picnic_get_cart",
+			"picnic_get_checkout_status",
 			"picnic_get_deliveries",
 			"picnic_get_delivery",
 			"picnic_get_delivery_slots",
@@ -178,6 +248,7 @@ describe("picnic-mcp server", () => {
 			"picnic_search_products",
 			"picnic_send_2fa_code",
 			"picnic_set_delivery_slot",
+			"picnic_start_checkout",
 			"picnic_track_delivery",
 			"picnic_unsave_recipe",
 			"picnic_verify_2fa_code",
@@ -266,6 +337,90 @@ describe("picnic-mcp server", () => {
 		expect(text(result)).toMatch(/Client version is required/);
 		expect(text(result)).toMatch(/picnic_get_cart/);
 		expect(calls.addProductToCart).toEqual([["s1", 2]]);
+	});
+
+	it("starts checkout with the cart's mts and returns the payment URL", async () => {
+		const { session, calls } = fakeSession();
+		await connect(session);
+		const result = await client.callTool({
+			name: "picnic_start_checkout",
+			arguments: {},
+		});
+		expect(result.isError).toBeFalsy();
+		expect(payload(result)).toMatchObject({
+			order_id: "order-1",
+			transaction_id: "tx-1",
+			payment_url: "https://bank.test/pay",
+			total_price: 2599,
+			delivery_slot: { slot_id: "slot-1" },
+		});
+		expect(calls.startCheckout).toEqual([
+			{ mts: 1700000000000, resolve_key: undefined },
+		]);
+		expect(calls.initiatePayment).toEqual([["order-1", "https://picnic.app/"]]);
+	});
+
+	it("refuses to start checkout on an empty cart", async () => {
+		const { session, calls } = fakeSession({ cartCount: 0 });
+		await connect(session);
+		const result = await client.callTool({
+			name: "picnic_start_checkout",
+			arguments: {},
+		});
+		expect(result.isError).toBe(true);
+		expect(text(result)).toMatch(/empty/);
+		expect(calls.startCheckout).toEqual([]);
+	});
+
+	it("surfaces a checkout issue with its resolve_key and passes it back", async () => {
+		const { session, calls } = fakeSession({ checkoutIssue: true });
+		await connect(session);
+		const result = await client.callTool({
+			name: "picnic_start_checkout",
+			arguments: {},
+		});
+		expect(result.isError).toBe(true);
+		expect(text(result)).toMatch(/Age check/);
+		expect(text(result)).toMatch(/resolve_key "age_verified"/);
+		expect(calls.initiatePayment).toEqual([]);
+
+		await client.callTool({
+			name: "picnic_start_checkout",
+			arguments: { resolve_key: "age_verified" },
+		});
+		expect(calls.startCheckout[1]).toEqual({
+			mts: 1700000000000,
+			resolve_key: "age_verified",
+		});
+	});
+
+	it("confirms an order only once its payment has finished", async () => {
+		const pendingFixture = fakeSession({ checkoutStatus: "PENDING" });
+		await connect(pendingFixture.session);
+		const pending = await client.callTool({
+			name: "picnic_confirm_order",
+			arguments: { order_id: "order-1", transaction_id: "tx-1" },
+		});
+		expect(pending.isError).toBe(true);
+		expect(text(pending)).toMatch(/PENDING/);
+		expect(pendingFixture.calls.confirmOrder).toEqual([]);
+		await close();
+
+		const { session, calls } = fakeSession();
+		await connect(session);
+		const placed = await client.callTool({
+			name: "picnic_confirm_order",
+			arguments: { order_id: "order-1", transaction_id: "tx-1" },
+		});
+		expect(payload(placed)).toEqual({
+			order_id: "order-1",
+			delivery_slot: {
+				slot_id: "slot-1",
+				window_start: "2026-10-14T08:00:00Z",
+				window_end: "2026-10-14T10:00:00Z",
+			},
+		});
+		expect(calls.confirmOrder).toEqual(["order-1"]);
 	});
 
 	it("steers the model to the 2FA tools while verification is pending", async () => {
