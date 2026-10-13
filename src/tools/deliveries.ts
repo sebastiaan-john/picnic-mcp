@@ -12,15 +12,20 @@ import {
 
 const deliveryId = idArg("Delivery id from picnic_get_deliveries");
 
+/** Picnic answers the position request with an empty body when the delivery is not on its way; picnic-api fails to parse it. */
+const EMPTY_BODY_RE = /unexpected (eof|end of (json|input))/i;
+
 function settled(result: PromiseSettledResult<unknown>) {
-	return result.status === "fulfilled"
-		? { value: result.value }
-		: {
-				error:
-					result.reason instanceof Error
-						? result.reason.message
-						: String(result.reason),
-			};
+	if (result.status === "fulfilled") return { value: result.value };
+	const message =
+		result.reason instanceof Error
+			? result.reason.message
+			: String(result.reason);
+	return {
+		error: EMPTY_BODY_RE.test(message)
+			? "Picnic returned no data; the delivery is not on its way."
+			: message,
+	};
 }
 
 export function registerDeliveryTools(server: McpServer, session: Session) {

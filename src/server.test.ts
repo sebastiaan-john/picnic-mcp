@@ -189,32 +189,39 @@ function fakeSession(
 			getDeliveryScenario: async () => ({ eta: "x" }),
 		},
 		recipe: {
-			getRecipe: async (id: string, portions?: number) => {
-				calls.recipe.push(["getRecipe", id, portions]);
+			// Without a count Picnic renders the app's last-used 3, not the stored default 2.
+			getRecipeDetailsPage: async (id: string, portions?: number) => {
+				calls.recipe.push(["getRecipeDetailsPage", id, portions]);
+				const rendered = portions ?? 3;
 				return {
-					id: RECIPE_ID,
-					name: "Pasta",
-					portions: portions ?? 2,
-					defaultPortions: 2,
-					isSaved: false,
-					imageId: "recipes/abc",
-					ingredients: [
-						{
-							sellingUnitId: "s9",
-							name: null,
-							quantity: 2,
-							status: "ACTIVE",
-							checked: true,
-						},
-					],
-					note: null,
-				};
-			},
-			getRecipeDetailsPage: async (...args: unknown[]) => {
-				calls.recipe.push(["getRecipeDetailsPage", ...args]);
-				return {
-					type: "RICH_TEXT",
-					markdown: "Zutaten\nNudeln 500 g\nSchritt 1\nKochen.",
+					analytics: {
+						contexts: [
+							{
+								data: {
+									recipe_id: RECIPE_ID,
+									recipe_name: "Pasta",
+									portions: rendered,
+									selling_units: [
+										{
+											ingredient_id: "i1",
+											selling_unit_id: "s9",
+											quantity: rendered,
+										},
+									],
+								},
+							},
+						],
+					},
+					header: {
+						creator_type: "PICNIC",
+						sellable_name: "Pasta",
+						default_portions: 2,
+						is_saved: false,
+					},
+					body: {
+						type: "RICH_TEXT",
+						markdown: "Zutaten\nNudeln 500 g\nSchritt 1\nKochen.",
+					},
 				};
 			},
 		},
@@ -574,7 +581,7 @@ describe("picnic-mcp server", () => {
 			},
 		});
 		expect(calls.recipe).toEqual([
-			["getRecipe", RECIPE_ID, undefined],
+			["getRecipeDetailsPage", RECIPE_ID, undefined],
 			["getRecipeDetailsPage", RECIPE_ID, 2],
 		]);
 		expect(payload(result)).toMatchObject({
@@ -599,9 +606,6 @@ describe("picnic-mcp server", () => {
 			name: "picnic_get_recipe",
 			arguments: { recipe: RECIPE_ID, portions: 4 },
 		});
-		expect(calls.recipe).toEqual([
-			["getRecipe", RECIPE_ID, 4],
-			["getRecipeDetailsPage", RECIPE_ID, 4],
-		]);
+		expect(calls.recipe).toEqual([["getRecipeDetailsPage", RECIPE_ID, 4]]);
 	});
 });
