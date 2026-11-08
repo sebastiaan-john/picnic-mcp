@@ -4,42 +4,49 @@ export type Cart = Awaited<ReturnType<PicnicApi["cart"]["getCart"]>>;
 
 /**
  * Trims a Picnic cart to what a model needs to reason about it. All prices
- * are in cents; article `price` is per unit. Quantity comes from the QUANTITY
- * decorator because Picnic carries it there rather than as a field, and is
- * null when the decorator is absent rather than guessed.
+ * are in cents; a line's `price` is for its whole quantity after discounts.
+ * Optional fields appear only when Picnic sets them.
  */
 export function cartView(cart: Cart) {
-	const slot = cart.delivery_slots.find(
-		(s) => s.slot_id === cart.selected_slot.slot_id,
-	);
+	const slot = cart.selectedSlot;
 	return {
-		id: cart.id,
-		total_count: cart.total_count,
-		total_price: cart.total_price,
-		checkout_total_price: cart.checkout_total_price,
-		...(cart.total_savings !== undefined && {
-			total_savings: cart.total_savings,
+		total_count: cart.totalCount,
+		total_price: cart.totalPrice,
+		...(cart.promotionSavings > 0 && {
+			promotion_savings: cart.promotionSavings,
+		}),
+		...(cart.depositTotal > 0 && { deposit_total: cart.depositTotal }),
+		...(cart.minimumOrderValue !== null && {
+			minimum_order_value: cart.minimumOrderValue,
 		}),
 		selected_slot: slot
 			? {
-					slot_id: slot.slot_id,
-					window_start: slot.window_start,
-					window_end: slot.window_end,
+					slot_id: slot.slotId,
+					window_start: slot.windowStart,
+					window_end: slot.windowEnd,
+					chosen_by_user: slot.isExplicitSelection,
 				}
 			: null,
 		items: cart.items.map((line) => ({
-			order_line_id: line.id,
-			price: line.display_price,
-			articles: line.items.map((article) => ({
-				product_id: article.id,
-				name: article.name,
-				unit: article.unit_quantity,
-				price: article.price,
-				quantity:
-					article.decorators.find((d) => d.type === "QUANTITY")?.quantity ??
-					null,
-				...(article.image_ids[0] && { image_id: article.image_ids[0] }),
-			})),
+			product_id: line.productId,
+			name: line.name,
+			unit: line.unitQuantity,
+			quantity: line.quantity,
+			price: line.displayPrice,
+			...(line.originalPrice !== null && {
+				original_price: line.originalPrice,
+			}),
+			...(line.labels.length > 0 && {
+				labels: line.labels.map((l) => l.text),
+			}),
+			...(line.isUnavailable && {
+				unavailable: line.unavailableReason ?? true,
+			}),
+			...(line.recipeId && { recipe_id: line.recipeId }),
+			...(line.imageId && { image_id: line.imageId }),
 		})),
+		...(cart.recipes.length > 0 && {
+			recipes: cart.recipes.map((r) => ({ id: r.id, name: r.title })),
+		}),
 	};
 }

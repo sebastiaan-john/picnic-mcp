@@ -14,7 +14,7 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/server": "^2.3.1",
-		"picnic-api": "^4.10.0",
+		"picnic-api": "5.3.0",
 		"zod": "^4.6.5"
 	},
 	"devDependencies": {

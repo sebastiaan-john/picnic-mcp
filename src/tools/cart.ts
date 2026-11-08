@@ -22,7 +22,7 @@ export function registerCartTools(server: McpServer, session: Session) {
 		{
 			title: "Get cart",
 			description:
-				"The current shopping cart: products with quantities and prices in cents, totals, and the selected delivery slot. Call this to verify the cart after a mutation reported an error.",
+				"The current shopping cart: products with quantities and prices in cents (a line's `price` covers its whole quantity after discounts), `total_price` as the amount to pay including deposits and fees, and the selected delivery slot. Call this to verify the cart after a mutation reported an error.",
 			annotations: READ_ONLY,
 		},
 		() =>
@@ -86,7 +86,7 @@ export function registerCartTools(server: McpServer, session: Session) {
 		{
 			title: "Get delivery slots",
 			description:
-				"Delivery windows for the next `days` calendar days (Picnic offers about 15 a day for two weeks): slot id, start and end, order cut-off, minimum order in cents, availability with reason, and which is selected. Pass a slot id to picnic_set_delivery_slot.",
+				"Delivery windows for the next `days` calendar days (Picnic offers about 15 a day for two weeks): slot id, start and end, order cut-off, minimum order in cents, availability, whether it is Picnic's green choice, and which is selected. Pass a slot id to picnic_set_delivery_slot.",
 			inputSchema: z.object({
 				days: z
 					.number()
@@ -104,28 +104,24 @@ export function registerCartTools(server: McpServer, session: Session) {
 			session.call(async (client) => {
 				const result = await client.cart.getDeliverySlots();
 				const dates = [
-					...new Set(
-						result.delivery_slots.map((s) => s.window_start.slice(0, 10)),
-					),
+					...new Set(result.slots.map((s) => s.windowStart.slice(0, 10))),
 				].slice(0, days);
-				const slots = result.delivery_slots.filter((s) =>
-					dates.includes(s.window_start.slice(0, 10)),
+				const slots = result.slots.filter((s) =>
+					dates.includes(s.windowStart.slice(0, 10)),
 				);
 				return json({
-					selected_slot_id: result.selected_slot?.slot_id ?? null,
+					selected_slot_id: result.selectedSlot?.slotId ?? null,
 					days: dates,
 					slots: slots.map((slot) => ({
-						slot_id: slot.slot_id,
-						window_start: slot.window_start,
-						window_end: slot.window_end,
-						cut_off_time: slot.cut_off_time,
-						is_available: slot.is_available,
-						selected: slot.selected,
-						...(slot.minimum_order_value !== undefined && {
-							minimum_order_value: slot.minimum_order_value,
-						}),
-						...(slot.unavailability_reason && {
-							unavailability_reason: slot.unavailability_reason,
+						slot_id: slot.slotId,
+						window_start: slot.windowStart,
+						window_end: slot.windowEnd,
+						cut_off_time: slot.cutOffTime,
+						is_available: slot.isAvailable,
+						selected: slot.isSelected,
+						...(slot.isGreenChoice && { green_choice: true }),
+						...(slot.minimumOrderValue !== null && {
+							minimum_order_value: slot.minimumOrderValue,
 						}),
 					})),
 				});

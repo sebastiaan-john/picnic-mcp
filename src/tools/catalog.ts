@@ -1,44 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/server";
-import PicnicClient from "picnic-api";
-import {
-	extractProductDetails,
-	findById,
-	stripColorMarkup,
-} from "picnic-api/lib/domains/catalog/helpers";
 import * as z from "zod";
-import { favoritesFromPage, favoritesPageReference } from "../picnic/favorites";
-import { promotionsFromPage } from "../picnic/promotions";
+import { tileView, uniqueTiles } from "../picnic/product-tile";
 import type { Session } from "../session";
 import { idArg, json, paginate, paginationArgs, READ_ONLY } from "./common";
 
-const PROMOTIONS_PAGE = "promo-page-all-promos-redirect";
-/** The Favorieten tab for an account with few purchases; the bootstrap tabs are checked first. */
-const FAVORITES_PAGE = "purchases_page_no_products_root";
-
-/**
- * picnic-api 4.10 reads the product name from a HEADER1 node among the main
- * container's direct children, but Picnic now wraps that header in an
- * accessibility container, so the name comes back empty. Find it at any depth.
- */
-function headerText(node: unknown): string | null {
-	if (Array.isArray(node)) {
-		for (const child of node) {
-			const found = headerText(child);
-			if (found) return found;
-		}
-		return null;
-	}
-	if (typeof node !== "object" || node === null) return null;
-	const record = node as Record<string, unknown>;
-	if (record.textType === "HEADER1" && typeof record.markdown === "string") {
-		return stripColorMarkup(record.markdown).trim();
-	}
-	for (const value of Object.values(record)) {
-		const found = headerText(value);
-		if (found) return found;
-	}
-	return null;
-}
+/** The search section of products the account bought before ("Opnieuw bestellen"). */
+const BOUGHT_BEFORE_SECTION = "RFY";
 
 const productId = idArg("Product id such as 's1001524'");
 
@@ -48,32 +15,38 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		{
 			title: "Search products",
 			description:
-				"Products in the Picnic catalog matching keywords: id, name, price in cents, unit, cart limit (max_count), and image id. Use the id with picnic_add_to_cart or picnic_get_product.",
+				"Products in the Picnic catalog matching keywords, in Picnic's order: id, name, brand, price per unit in cents (original_price when discounted), unit, unit_price as display text such as '€1.99/l', promotion labels, and image id. `bought_before` marks products this account ordered before. Use the id with picnic_add_to_cart or picnic_get_product.",
 			inputSchema: z.object({
 				query: z
 					.string()
 					.min(1)
 					.describe("Search terms, e.g. 'halfvolle melk'"),
-				...paginationArgs(20, 10),
+				...paginationArgs(50, 10),
 			}),
 			annotations: READ_ONLY,
 		},
 		({ query, limit, offset }) =>
 			session.call(async (client) => {
+				const results = await client.catalog.getSearchResults(query);
+				const sections = results.products?.sections ?? [];
+				const boughtBefore = new Set(
+					sections
+						.filter((s) => s.type === BOUGHT_BEFORE_SECTION)
+						.flatMap((s) => s.products.map((p) => p.id)),
+				);
 				const page = paginate(
-					await client.catalog.search(query),
+					uniqueTiles(sections.flatMap((s) => s.products)),
 					offset,
 					limit,
 				);
 				return json({
 					query,
-					results: page.items.map((p) => ({
-						id: p.id,
-						name: p.name,
-						price: p.display_price,
-						unit: p.unit_quantity,
-						max_count: p.max_count,
-						...(p.image_id && { image_id: p.image_id }),
+					...(results.correctedQuery && {
+						corrected_query: results.correctedQuery,
+					}),
+					results: page.items.map((tile) => ({
+						...tileView(tile),
+						...(boughtBefore.has(tile.id) && { bought_before: true }),
 					})),
 					pagination: page.pagination,
 				});
@@ -85,7 +58,7 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		{
 			title: "Get product details",
 			description:
-				"One product: name, brand, unit, price in cents, description, highlights, allergens, current promotion, and bundle prices. Set `full` for ingredient and nutrition sections, similar products, and price tiers.",
+				"One product: name, brand, unit, price in cents, description, labels, highlights, allergens, current promotion, and cart limit (maxCount). Set `full` for ingredient and nutrition sections, similar products, and price tiers.",
 			inputSchema: z.object({
 				product_id: productId,
 				full: z
@@ -99,20 +72,15 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		},
 		({ product_id, full }) =>
 			session.call(async (client) => {
-				const page = await client.catalog.getProductDetailsPage(product_id);
-				const details = extractProductDetails(product_id, page);
-				if (!details.name) {
-					details.name =
-						headerText(
-							findById(
-								page.layout.body,
-								"product-details-page-root-main-container",
-							),
-						) ?? "";
-				}
-				if (full) return json(details);
-				const { infoSections, similarProducts, priceRanges, ...summary } =
-					details;
+				const product = await client.catalog.getProduct(product_id);
+				if (full) return json(product);
+				const {
+					infoSections,
+					nutritionRows,
+					similarProducts,
+					priceRanges,
+					...summary
+				} = product;
 				return json(summary);
 			}),
 	);
@@ -122,16 +90,26 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		{
 			title: "Get favorites",
 			description:
-				"The account's favorites from the Favorieten tab: product id, name, price in cents, and unit. Picnic's suggestion shelves on that tab are not included.",
+				"The products this account buys, per aisle, from the Favorieten tab: id, name, brand, price in cents, unit, and labels.",
 			annotations: READ_ONLY,
 		},
 		() =>
 			session.call(async (client) => {
-				const reference =
-					favoritesPageReference(await client.app.getBootstrapData()) ??
-					FAVORITES_PAGE;
+				const { aisles } = await client.catalog.getFavorites();
+				const products = await Promise.all(
+					aisles.map((aisle) =>
+						aisle.complete
+							? aisle.products
+							: client.catalog.getFavoritesInAisle(aisle.id),
+					),
+				);
 				return json({
-					favorites: favoritesFromPage(await client.app.getPage(reference)),
+					aisles: aisles
+						.map((aisle, i) => ({
+							aisle: aisle.title,
+							products: (products[i] ?? []).map(tileView),
+						}))
+						.filter((aisle) => aisle.products.length > 0),
 				});
 			}),
 	);
@@ -179,24 +157,33 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		{
 			title: "Get current promotions",
 			description:
-				"This week's promotions from the Picnic deals page: product id, name, promotional price in cents, label such as '1+1 gratis', and the original price when shown.",
+				"This week's deals from the Picnic deals page, section by section with a section's products before its groups, each with the section it appears in. A deal is either one product (id, name, promotional price in cents, original price, labels such as '1+1 gratis') or a range of products (`group` name such as 'Gesneden fruit', `label` such as '2 voor €4', and an `example`); search for a group's name to find its products.",
 			inputSchema: z.object(paginationArgs(100, 25)),
 			annotations: READ_ONLY,
 		},
 		({ limit, offset }) =>
 			session.call(async (client) => {
-				const page = await client.app
-					.getPage(PROMOTIONS_PAGE)
-					.catch((error: unknown) => {
-						if (PicnicClient.isUnexpectedPageFormatError(error)) {
-							throw new Error(
-								"Picnic changed the promotions page format and this server cannot read it. Tell the user to set PICNIC_AGENT to an older app version, such as '30100;1.236.1-15553;', and restart the server.",
-								{ cause: error },
-							);
-						}
-						throw error;
-					});
-				const result = paginate(promotionsFromPage(page), offset, limit);
+				const { sections } = await client.catalog.getPromotions();
+				const seen = new Set<string>();
+				const isNew = (id: string) => {
+					if (seen.has(id)) return false;
+					seen.add(id);
+					return true;
+				};
+				const deals = sections.flatMap((section) => [
+					...section.products
+						.filter((tile) => isNew(tile.id))
+						.map((tile) => ({ ...tileView(tile), section: section.title })),
+					...section.groups
+						.filter((group) => isNew(group.id))
+						.map((group) => ({
+							group: group.name,
+							...(group.label && { label: group.label }),
+							...(group.example && { example: group.example }),
+							section: section.title,
+						})),
+				]);
+				const result = paginate(deals, offset, limit);
 				return json({
 					promotions: result.items,
 					pagination: result.pagination,

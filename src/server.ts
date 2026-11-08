@@ -9,7 +9,7 @@ import { registerDeliveryTools } from "./tools/deliveries";
 import { registerRecipeTools } from "./tools/recipes";
 
 const INSTRUCTIONS = [
-	"Prices are integers in euro cents. Product ids look like 's1001524'.",
+	"Prices and totals are integers in euro cents; prices per weight or volume (unit_price, unitPrice, basePrice) are display text such as '€1.99/l'. Product ids look like 's1001524'.",
 	"Adding or removing products and adding recipes is not idempotent: after an error, call picnic_get_cart before retrying.",
 	"Placing an order is picnic_start_checkout, the user paying at the returned payment URL, then picnic_confirm_order. Ask the user before starting a checkout.",
 ].join(" ");
