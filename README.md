@@ -44,7 +44,7 @@ Picnic asks for an SMS code when a login needs a second factor, for example the 
 | `PICNIC_PASSWORD` | required | Picnic account password |
 | `PICNIC_COUNTRY_CODE` | `NL` | `NL`, `DE`, or `FR`; must match the account |
 | `PICNIC_STATE_FILE` | `~/.picnic-mcp.json` | Saved session key, device id, and 2FA state; written with mode 600 |
-| `PICNIC_AGENT` | picnic-api's default | App version sent as `x-picnic-agent`. Set an older one, e.g. `30100;1.236.1-15553;`, when a tool reports an unreadable page format |
+| `PICNIC_AGENT` | picnic-api's default | App version sent as `x-picnic-agent`. Override it only when Picnic rejects the default version |
 | `PICNIC_HTTP_PORT` | unset | Serve Streamable HTTP on this port instead of stdio |
 | `PICNIC_HTTP_HOST` | `127.0.0.1` | Bind address for HTTP mode |
 | `PICNIC_HTTP_TOKEN` | unset | Bearer token every request must carry; required (16+ characters) whenever HTTP is on |
@@ -66,11 +66,11 @@ Prices are in euro cents. Product ids look like `s1001524`.
 
 | Tool | Does |
 |---|---|
-| `picnic_search_products` | Keyword search with paging |
+| `picnic_search_products` | Keyword search with paging; marks products the account bought before |
 | `picnic_get_product` | One product; `full=true` adds ingredient and nutrition sections, similar products, and price tiers |
 | `picnic_get_product_image` | PNG image by image id |
 | `picnic_get_promotions` | This week's deals |
-| `picnic_get_favorites` | The account's favorites from the Favorieten tab |
+| `picnic_get_favorites` | The products the account buys, per aisle, from the Favorieten tab |
 | `picnic_get_cart` | Cart contents, totals, selected slot |
 | `picnic_add_to_cart`, `picnic_remove_from_cart`, `picnic_clear_cart` | Cart mutations |
 | `picnic_get_delivery_slots`, `picnic_set_delivery_slot` | Delivery windows, the next three days by default |
@@ -79,7 +79,7 @@ Prices are in euro cents. Product ids look like `s1001524`.
 | `picnic_get_deliveries`, `picnic_get_delivery` | Order history and one delivery in full |
 | `picnic_track_delivery` | ETA and route for a delivery on its way |
 | `picnic_cancel_delivery` | Cancel an upcoming delivery |
-| `picnic_get_recipe` | Ingredients with product ids, amounts, steps, tips, timing; scalable by portions |
+| `picnic_get_recipe` | Ingredients with product ids and amounts, steps, timing, allergens; scalable by portions |
 | `picnic_get_recipes` | Saved or own recipes |
 | `picnic_save_recipe`, `picnic_unsave_recipe` | Cookbook bookmarks |
 | `picnic_add_recipe_to_cart`, `picnic_remove_recipe_from_cart` | Recipe bundles in the cart |
@@ -107,6 +107,6 @@ bunx @modelcontextprotocol/inspector -e PICNIC_USERNAME=you@example.com -e PICNI
 
 ## Credits
 
-Started as a rewrite of [ivo-toby/mcp-picnic](https://github.com/ivo-toby/mcp-picnic) and keeps its cart-safety and recipe-page extraction ideas. Picnic access is through [MRVDH/picnic-api](https://github.com/MRVDH/picnic-api). Not affiliated with Picnic.
+Started as a rewrite of [ivo-toby/mcp-picnic](https://github.com/ivo-toby/mcp-picnic) and keeps its cart-safety ideas. Picnic access is through [MRVDH/picnic-api](https://github.com/MRVDH/picnic-api). Not affiliated with Picnic.
 
 MIT, see [LICENSE](LICENSE).

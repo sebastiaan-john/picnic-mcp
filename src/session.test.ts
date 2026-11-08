@@ -60,7 +60,7 @@ function fakeApi(opts: {
 					if (opts.loginError) throw opts.loginError;
 					client.authKey = `login-${calls.login}`;
 					return {
-						second_factor_authentication_required: opts.needsTwoFactor ?? false,
+						secondFactorAuthenticationRequired: opts.needsTwoFactor ?? false,
 					};
 				},
 				generate2FACode: async () => {

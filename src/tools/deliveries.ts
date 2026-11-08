@@ -15,26 +15,13 @@ const deliveryId = idArg("Delivery id from picnic_get_deliveries");
 /** Picnic answers the position request with an empty body when the delivery is not on its way; picnic-api fails to parse it. */
 const EMPTY_BODY_RE = /unexpected (eof|end of (json|input))/i;
 
-function settled(result: PromiseSettledResult<unknown>) {
-	if (result.status === "fulfilled") return { value: result.value };
-	const message =
-		result.reason instanceof Error
-			? result.reason.message
-			: String(result.reason);
-	return {
-		error: EMPTY_BODY_RE.test(message)
-			? "Picnic returned no data; the delivery is not on its way."
-			: message,
-	};
-}
-
 export function registerDeliveryTools(server: McpServer, session: Session) {
 	server.registerTool(
 		"picnic_get_deliveries",
 		{
 			title: "Get deliveries",
 			description:
-				"Past and upcoming deliveries in Picnic's order: delivery id, status, delivery window, ETA, and order totals in cents. Use picnic_get_delivery for the items of one delivery.",
+				"Past and upcoming deliveries, newest first: delivery id, status, delivery window, number of orders, and total price in cents. Use picnic_get_delivery for the items of one delivery.",
 			inputSchema: z.object({
 				status: z
 					.array(z.enum(["CURRENT", "COMPLETED", "CANCELLED"]))
@@ -49,7 +36,7 @@ export function registerDeliveryTools(server: McpServer, session: Session) {
 		({ status, limit, offset }) =>
 			session.call(async (client) => {
 				const page = paginate(
-					await client.delivery.getDeliveries(status),
+					await client.delivery.getDeliverySummaries(status),
 					offset,
 					limit,
 				);
@@ -62,7 +49,7 @@ export function registerDeliveryTools(server: McpServer, session: Session) {
 		{
 			title: "Get delivery",
 			description:
-				"One delivery in full: orders with their items and prices, returned containers, slot, and status.",
+				"One delivery in full: orders with their products and prices in cents, returned containers, deposits, delivery window, and status.",
 			inputSchema: z.object({ delivery_id: deliveryId }),
 			annotations: READ_ONLY,
 		},
@@ -77,20 +64,22 @@ export function registerDeliveryTools(server: McpServer, session: Session) {
 		{
 			title: "Track delivery",
 			description:
-				"ETA and route (timestamped coordinates, driver, vehicle) for a delivery that is out for delivery. `position` and `scenario` each hold `value` or `error`, since either can be unavailable.",
+				"Where a delivery that is out for delivery is: ETA, the driver's current point, the route (timestamped coordinates), driver, and vehicle. `inProgress` is false when the delivery is not on its way.",
 			inputSchema: z.object({ delivery_id: deliveryId }),
 			annotations: READ_ONLY,
 		},
 		({ delivery_id }) =>
 			session.call(async (client) => {
-				const [position, scenario] = await Promise.allSettled([
-					client.delivery.getDeliveryPosition(delivery_id),
-					client.delivery.getDeliveryScenario(delivery_id),
-				]);
-				return json({
-					position: settled(position),
-					scenario: settled(scenario),
-				});
+				try {
+					const tracking =
+						await client.delivery.getDeliveryTracking(delivery_id);
+					const { vehicleImageDataUrl, ...route } = tracking.route;
+					return json({ ...tracking, route });
+				} catch (error) {
+					const message = error instanceof Error ? error.message : "";
+					if (EMPTY_BODY_RE.test(message)) return json({ inProgress: false });
+					throw error;
+				}
 			}),
 	);
 
@@ -105,9 +94,8 @@ export function registerDeliveryTools(server: McpServer, session: Session) {
 		},
 		({ delivery_id }) =>
 			session.call(async (client) => {
-				const result: unknown =
-					await client.delivery.cancelDelivery(delivery_id);
-				return json({ delivery_id, cancelled: true, result });
+				await client.delivery.cancelDelivery(delivery_id);
+				return json({ delivery_id, cancelled: true });
 			}),
 	);
 }

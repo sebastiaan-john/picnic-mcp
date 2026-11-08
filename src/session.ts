@@ -145,7 +145,7 @@ export class PicnicSession implements Session {
 			this.options.username,
 			this.options.password,
 		);
-		this.twoFactorPending = login.second_factor_authentication_required;
+		this.twoFactorPending = login.secondFactorAuthenticationRequired;
 		await this.save(client).catch(warnSaveFailed);
 		if (this.twoFactorPending) throw new TwoFactorRequiredError();
 		return client;

@@ -64,14 +64,14 @@ export function registerCheckoutTools(server: McpServer, session: Session) {
 		({ resolve_key }) =>
 			session.call(async (client) => {
 				const cart = await client.cart.getCart();
-				if (cart.total_count === 0) throw new Error("The cart is empty.");
-				if (!cart.selected_slot?.slot_id) {
+				if (cart.totalCount === 0) throw new Error("The cart is empty.");
+				if (!cart.selectedSlot?.slotId) {
 					throw new Error(
 						"No delivery slot is selected; call picnic_set_delivery_slot first.",
 					);
 				}
-				const checkout = await client.cart
-					.startCheckout({ mts: cart.mts, resolve_key })
+				const checkout = await client.checkout
+					.startCheckout({ mts: cart.mts, resolveKey: resolve_key })
 					.catch((error: unknown) => {
 						if (PicnicClient.isCheckoutIssueError(error)) {
 							throw new Error(
@@ -84,7 +84,7 @@ export function registerCheckoutTools(server: McpServer, session: Session) {
 						}
 						throw error;
 					});
-				const payment = await client.cart
+				const payment = await client.checkout
 					.initiatePayment(checkout.order_id, RETURN_URL)
 					.catch((error: unknown) => {
 						const message =
@@ -139,14 +139,14 @@ export function registerCheckoutTools(server: McpServer, session: Session) {
 					);
 				}
 				const { checkout_status } =
-					await client.cart.getCheckoutStatus(transaction_id);
+					await client.checkout.getCheckoutStatus(transaction_id);
 				if (checkout_status !== "FINISHED") {
 					throw new Error(
 						`Payment status is ${checkout_status}, not FINISHED. The order is not placed. If the payment is still pending, ask the user to complete it at the payment URL and call picnic_confirm_order again; if it failed or expired, start a new checkout.`,
 					);
 				}
 				try {
-					const confirmation = await client.cart.confirmOrder(order_id);
+					const confirmation = await client.checkout.confirmOrder(order_id);
 					return json({
 						order_id: confirmation.order_id,
 						delivery_slot: confirmation.delivery_slot
@@ -181,13 +181,13 @@ export function registerCheckoutTools(server: McpServer, session: Session) {
 		({ transaction_id }) =>
 			session.call(async (client) => {
 				const { checkout_status } =
-					await client.cart.getCheckoutStatus(transaction_id);
+					await client.checkout.getCheckoutStatus(transaction_id);
 				if (checkout_status === "FINISHED") {
 					throw new Error(
 						"The payment has finished, so cancelling would leave it without an order. Call picnic_confirm_order, then picnic_cancel_delivery if the user wants to undo it.",
 					);
 				}
-				await client.cart.cancelCheckout(transaction_id);
+				await client.checkout.cancelCheckout(transaction_id);
 				return json({ cancelled: true });
 			}),
 	);
@@ -203,7 +203,7 @@ export function registerCheckoutTools(server: McpServer, session: Session) {
 		},
 		({ transaction_id }) =>
 			session.call(async (client) =>
-				json(await client.cart.getCheckoutStatus(transaction_id)),
+				json(await client.checkout.getCheckoutStatus(transaction_id)),
 			),
 	);
 }

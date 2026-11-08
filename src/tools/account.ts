@@ -14,7 +14,7 @@ export function registerAccountTools(server: McpServer, session: Session) {
 		},
 		() =>
 			session.call(async (client) => {
-				const user = await client.user.getUserDetails();
+				const user = await client.user.getUser();
 				return json({
 					user_id: user.user_id,
 					firstname: user.firstname,

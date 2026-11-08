@@ -1,8 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/server";
-import { extractRecipeDetails } from "picnic-api/lib/domains/recipe/helpers";
 import * as z from "zod";
 import { recipeUrl, resolveRecipeId } from "../picnic/recipe-id";
-import { recipeTextFromPage } from "../picnic/recipe-page";
 import type { PicnicApi, Session } from "../session";
 import {
 	CART_MUTATION,
@@ -32,26 +30,17 @@ function resolve(client: PicnicApi, ref: string) {
 }
 
 /**
- * One page serves both the structured details and the readable text, so it
- * is fetched once; picnic-api's getRecipe would fetch it again. Picnic may
- * render a different portion count than asked (some counts are rejected), in
- * which case the page is fetched again at the requested count, as picnic-api's
- * getRecipe does, so the text and the product quantities come from one page.
+ * picnic-api refetches the page once when Picnic renders another portion
+ * count than asked; some counts are still rejected, so check the result.
  */
 async function loadRecipe(client: PicnicApi, id: string, portions?: number) {
-	let page = await client.recipe.getRecipeDetailsPage(id, portions);
-	let details = extractRecipeDetails(id, page);
-	const requested = portions ?? details.defaultPortions;
-	if (details.portions !== requested) {
-		page = await client.recipe.getRecipeDetailsPage(id, requested);
-		details = extractRecipeDetails(id, page);
-	}
-	if (details.portions !== requested) {
+	const recipe = await client.recipe.getRecipe(id, { portions });
+	if (portions !== undefined && recipe.portions !== portions) {
 		throw new Error(
-			`Picnic rendered recipe ${id} at ${details.portions} portions instead of ${requested}; try another portion count.`,
+			`Picnic rendered recipe ${id} at ${recipe.portions} portions instead of ${portions}; try another portion count.`,
 		);
 	}
-	return { details, text: recipeTextFromPage(page) };
+	return recipe;
 }
 
 export function registerRecipeTools(server: McpServer, session: Session) {
@@ -60,14 +49,14 @@ export function registerRecipeTools(server: McpServer, session: Session) {
 		{
 			title: "Get recipe",
 			description:
-				"A Picnic recipe: name, portions, ingredient products with ids and unit counts (names can be null; `ingredient_lines` has the readable amounts), pantry items, equipment, steps, tips, and timing. Pass `portions` to scale.",
+				"A Picnic recipe: name, portions, times, ingredient products with ids, unit counts, the amount the recipe needs, and price in cents (type CUPBOARD is a pantry staple the user likely has; CORE_STOCKABLE keeps, such as stock cubes), steps, and allergens. Pass `portions` to scale.",
 			inputSchema: z.object({ recipe: recipeRef, portions: portionsArg }),
 			annotations: READ_ONLY,
 		},
 		({ recipe, portions }) =>
 			session.call(async (client) => {
 				const id = await resolve(client, recipe);
-				const { details, text } = await loadRecipe(client, id, portions);
+				const details = await loadRecipe(client, id, portions);
 				return json({
 					id: details.id,
 					name: details.name,
@@ -76,20 +65,23 @@ export function registerRecipeTools(server: McpServer, session: Session) {
 					default_portions: details.defaultPortions,
 					is_saved: details.isSaved,
 					image_id: details.imageId,
-					prep_time: text.prepTime,
-					total_time: text.totalTime,
+					description: details.description,
+					times: details.times,
 					ingredients: details.ingredients.map((i) => ({
 						product_id: i.sellingUnitId,
 						name: i.name,
 						quantity: i.quantity,
-						status: i.status,
+						needed: i.neededText,
+						type: i.type,
 						selected_by_default: i.checked,
+						price: i.price,
+						...(!i.isAvailable && {
+							unavailable: i.unavailableReason ?? true,
+						}),
 					})),
-					ingredient_lines: text.ingredients,
-					pantry_ingredients: text.pantryIngredients,
-					tools: text.tools,
-					instructions: text.instructions,
-					tips: text.tips,
+					steps: details.steps,
+					...(details.stepsWarning && { steps_warning: details.stepsWarning }),
+					allergens: details.allergens,
 					note: details.note,
 				});
 			}),
@@ -170,11 +162,9 @@ export function registerRecipeTools(server: McpServer, session: Session) {
 			session.call(async (client) => {
 				const id = await resolve(client, recipe);
 				return mutateCart(`Adding recipe ${id} to the cart`, async () => {
-					const result = await client.recipe.assignSellingGroupToBasket(
-						id,
-						undefined,
+					const result = await client.recipe.addRecipeToCart(id, {
 						portions,
-					);
+					});
 					return json({
 						id,
 						portions: result.assignedNumberOfPortions,
@@ -196,7 +186,7 @@ export function registerRecipeTools(server: McpServer, session: Session) {
 		({ recipe }) =>
 			session.call(async (client) => {
 				const id = await resolve(client, recipe);
-				const result = await client.recipe.removeSellingGroupFromBasket(id);
+				const result = await client.recipe.removeRecipeFromCart(id);
 				return json({
 					id,
 					removed: result.SURemoved.map((u) => ({

@@ -25,11 +25,32 @@ interface Calls {
 	recipe: unknown[][];
 }
 
+type Tile = PicnicClient.Types.catalog.ProductTile;
+
+function tile(id: string, overrides: Partial<Tile> = {}): Tile {
+	return {
+		id,
+		name: `Product ${id}`,
+		namePrefix: null,
+		brand: null,
+		qualityCue: null,
+		imageId: null,
+		displayPrice: 199,
+		originalPrice: null,
+		unitPrice: null,
+		priceRanges: null,
+		unitQuantity: "1 l",
+		labels: [],
+		isUnavailable: false,
+		numberOfOrders: null,
+		...overrides,
+	};
+}
+
 function fakeSession(
 	opts: {
 		twoFactorPending?: boolean;
-		addFails?: boolean;
-		promoError?: Error;
+		renderedPortions?: number;
 		cartCount?: number;
 		noSlot?: boolean;
 		checkoutIssue?: boolean;
@@ -52,110 +73,84 @@ function fakeSession(
 	const api = {
 		countryCode: "NL",
 		catalog: {
-			search: async (query: string) => [
-				{
-					id: "s1",
-					name: `Result for ${query}`,
-					display_price: 199,
-					unit_quantity: "1 l",
-					max_count: 50,
-					image_id: "img",
-					decorators: [],
-					price_ranges: null,
-				},
-			],
-			getImageAsDataUri: async () => "data:image/png;base64,AQID",
-			getProductDetailsPage: async () => ({
-				layout: {
-					body: {
-						type: "STACK",
-						children: [
-							{
-								type: "RICH_TEXT",
-								textType: "HEADER1",
-								markdown: "Ontdek ook",
-							},
-							{
-								id: "product-details-page-root-main-container",
-								pml: {
-									component: {
-										children: [
-											{
-												type: "CONTAINER",
-												child: {
-													type: "RICH_TEXT",
-													textType: "HEADER1",
-													markdown: "#(#333333)Skyr#(#333333)",
-												},
-											},
-											{
-												type: "RICH_TEXT",
-												markdown: "Picnic",
-												textAttributes: { weight: "REGULAR" },
-											},
-										],
-									},
-								},
-							},
-						],
-					},
+			getSearchResults: async (query: string) => ({
+				query,
+				correctedQuery: null,
+				recipes: [],
+				products: {
+					sections: [
+						{
+							id: "rfy",
+							type: "RFY",
+							title: "Opnieuw bestellen",
+							products: [
+								tile("s1", { name: `Result for ${query}`, brand: "Campina" }),
+							],
+						},
+						{
+							id: "v",
+							type: "VISUAL",
+							title: "Zuivel",
+							products: [
+								tile("s1"),
+								tile("s2", {
+									originalPrice: 249,
+									labels: [
+										{
+											position: "bottomLeft",
+											type: "PROMO",
+											text: "1+1 gratis",
+										},
+									],
+								}),
+							],
+						},
+					],
 				},
 			}),
-		},
-		app: {
-			getBootstrapData: async () => ({
-				tabs: [
-					{ analytics_id: "usuals", target: { reference: "usuals_page" } },
+			getFavorites: async () => ({
+				aisles: [
+					{
+						id: "DAIRY",
+						title: "Zuivel",
+						products: [tile("s7")],
+						complete: true,
+					},
+					{ id: "PANTRY", title: "Voorraad", products: [], complete: false },
+					{ id: "PET", title: "Dier", products: [], complete: false },
 				],
 			}),
-			getPage: async (pageId: string) => {
-				if (pageId === "usuals_page") {
-					return {
-						children: [
-							{
-								id: "vertical-selling-unit-tiles-section",
-								child: {
-									sellingUnit: { id: "s7", name: "Skyr", display_price: 299 },
-								},
-							},
-							{
-								sellingUnit: {
-									id: "s8",
-									name: "Suggestie",
-									display_price: 100,
-								},
-							},
-						],
-					};
-				}
-				if (opts.promoError) throw opts.promoError;
-				return {};
-			},
+			getFavoritesInAisle: async (aisleId: string) =>
+				aisleId === "PANTRY" ? [tile("s8")] : [],
+			getImageAsDataUri: async () => "data:image/png;base64,AQID",
 		},
 		cart: {
 			getDeliverySlots: async () => ({
-				selected_slot: { slot_id: "b" },
-				delivery_slots: [
-					"2026-10-14",
-					"2026-10-14",
-					"2026-10-15",
-					"2026-10-16",
-				].map((day, i) => ({
-					slot_id: String.fromCharCode(97 + i),
-					window_start: `${day}T08:00:00.000+02:00`,
-					window_end: `${day}T09:00:00.000+02:00`,
-					cut_off_time: `${day}T13:00:00.000+02:00`,
-					is_available: true,
-					selected: i === 1,
-				})),
+				selectedSlot: { slotId: "b" },
+				slots: ["2026-10-14", "2026-10-14", "2026-10-15", "2026-10-16"].map(
+					(day, i) => ({
+						slotId: String.fromCharCode(97 + i),
+						windowStart: `${day}T08:00:00.000+02:00`,
+						windowEnd: `${day}T09:00:00.000+02:00`,
+						cutOffTime: `${day}T13:00:00.000+02:00`,
+						isAvailable: true,
+						isSelected: i === 1,
+						isGreenChoice: false,
+						minimumOrderValue: null,
+					}),
+				),
 			}),
 			getCart: async () => ({
 				mts: 1700000000000,
-				total_count: opts.cartCount ?? 3,
-				selected_slot: opts.noSlot
-					? null
-					: { slot_id: "slot-1", state: "EXPLICIT" },
+				totalCount: opts.cartCount ?? 3,
+				selectedSlot: opts.noSlot ? null : { slotId: "slot-1" },
 			}),
+			addProductToCart: async (id: string, count: number) => {
+				calls.addProductToCart.push([id, count]);
+				throw new Error("Client version is required");
+			},
+		},
+		checkout: {
 			startCheckout: async (input: unknown) => {
 				calls.startCheckout.push(input);
 				if (opts.checkoutIssue) {
@@ -217,60 +212,41 @@ function fakeSession(
 					analytics: null,
 				};
 			},
-			addProductToCart: async (id: string, count: number) => {
-				calls.addProductToCart.push([id, count]);
-				if (opts.addFails) throw new Error("Client version is required");
-				return {
-					id: "cart",
-					items: [],
-					delivery_slots: [],
-					selected_slot: { slot_id: "", state: "IMPLICIT" },
-					total_count: count,
-					total_price: 199 * count,
-					checkout_total_price: 199 * count,
-				};
-			},
 		},
 		delivery: {
-			getDeliveryPosition: async () => {
-				throw new Error("404 Not Found");
+			getDeliveryTracking: async () => {
+				throw new SyntaxError("Unexpected end of JSON input");
 			},
-			getDeliveryScenario: async () => ({ eta: "x" }),
 		},
 		recipe: {
-			// Without a count Picnic renders the app's last-used 3, not the stored default 2.
-			getRecipeDetailsPage: async (id: string, portions?: number) => {
-				calls.recipe.push(["getRecipeDetailsPage", id, portions]);
-				const rendered = portions ?? 3;
+			getRecipe: async (id: string, options: { portions?: number }) => {
+				calls.recipe.push([id, options.portions]);
 				return {
-					analytics: {
-						contexts: [
-							{
-								data: {
-									recipe_id: RECIPE_ID,
-									recipe_name: "Pasta",
-									portions: rendered,
-									selling_units: [
-										{
-											ingredient_id: "i1",
-											selling_unit_id: "s9",
-											quantity: rendered,
-										},
-									],
-								},
-							},
-						],
-					},
-					header: {
-						creator_type: "PICNIC",
-						sellable_name: "Pasta",
-						default_portions: 2,
-						is_saved: false,
-					},
-					body: {
-						type: "RICH_TEXT",
-						markdown: "Zutaten\nNudeln 500 g\nSchritt 1\nKochen.",
-					},
+					id,
+					name: "Pasta",
+					portions: opts.renderedPortions ?? options.portions ?? 2,
+					defaultPortions: 2,
+					isSaved: false,
+					imageId: null,
+					description: null,
+					times: [{ label: "Totaal", value: "20 min" }],
+					ingredients: [
+						{
+							sellingUnitId: "s9",
+							name: null,
+							quantity: 1,
+							neededText: "(500 g nodig)",
+							type: "CORE",
+							checked: true,
+							price: 129,
+							isAvailable: true,
+							unavailableReason: null,
+						},
+					],
+					steps: ["Kochen."],
+					stepsWarning: null,
+					allergens: { contains: [], mayContain: [] },
+					note: null,
 				};
 			},
 		},
@@ -379,7 +355,7 @@ describe("picnic-mcp server", () => {
 		).toBe(false);
 	});
 
-	it("returns trimmed search results as JSON text", async () => {
+	it("returns each search result once, marking products bought before", async () => {
 		await connect(fakeSession().session);
 		const result = await client.callTool({
 			name: "picnic_search_products",
@@ -392,17 +368,25 @@ describe("picnic-mcp server", () => {
 				{
 					id: "s1",
 					name: "Result for melk",
+					brand: "Campina",
 					price: 199,
 					unit: "1 l",
-					max_count: 50,
-					image_id: "img",
+					bought_before: true,
+				},
+				{
+					id: "s2",
+					name: "Product s2",
+					price: 199,
+					original_price: 249,
+					unit: "1 l",
+					labels: ["1+1 gratis"],
 				},
 			],
 			pagination: {
 				offset: 0,
 				limit: 10,
-				returned: 1,
-				total: 1,
+				returned: 2,
+				total: 2,
 				has_more: false,
 			},
 		});
@@ -426,7 +410,7 @@ describe("picnic-mcp server", () => {
 	});
 
 	it("reports a failed cart mutation as ambiguous and does not retry", async () => {
-		const { session, calls } = fakeSession({ addFails: true });
+		const { session, calls } = fakeSession();
 		await connect(session);
 		const result = await client.callTool({
 			name: "picnic_add_to_cart",
@@ -436,16 +420,6 @@ describe("picnic-mcp server", () => {
 		expect(text(result)).toMatch(/Client version is required/);
 		expect(text(result)).toMatch(/picnic_get_cart/);
 		expect(calls.addProductToCart).toEqual([["s1", 2]]);
-	});
-
-	it("finds the product name when Picnic wraps the header", async () => {
-		await connect(fakeSession().session);
-		const result = await client.callTool({
-			name: "picnic_get_product",
-			arguments: { product_id: "s1014487" },
-		});
-		expect(result.isError).toBeFalsy();
-		expect(payload(result)).toMatchObject({ name: "Skyr", brand: "Picnic" });
 	});
 
 	it("limits delivery slots to the first offered days", async () => {
@@ -463,14 +437,23 @@ describe("picnic-mcp server", () => {
 		).toEqual(["a", "b", "c"]);
 	});
 
-	it("lists favorites from the tab the bootstrap data points at", async () => {
+	it("loads the full list of favorites aisles the tab shows only in part", async () => {
 		await connect(fakeSession().session);
 		const result = await client.callTool({
 			name: "picnic_get_favorites",
 			arguments: {},
 		});
 		expect(payload(result)).toEqual({
-			favorites: [{ product_id: "s7", name: "Skyr", price: 299 }],
+			aisles: [
+				{
+					aisle: "Zuivel",
+					products: [{ id: "s7", name: "Product s7", price: 199, unit: "1 l" }],
+				},
+				{
+					aisle: "Voorraad",
+					products: [{ id: "s8", name: "Product s8", price: 199, unit: "1 l" }],
+				},
+			],
 		});
 	});
 
@@ -490,7 +473,7 @@ describe("picnic-mcp server", () => {
 			delivery_slot: { slot_id: "slot-1" },
 		});
 		expect(calls.startCheckout).toEqual([
-			{ mts: 1700000000000, resolve_key: undefined },
+			{ mts: 1700000000000, resolveKey: undefined },
 		]);
 		expect(calls.initiatePayment).toEqual([["order-1", "https://picnic.app/"]]);
 	});
@@ -599,7 +582,7 @@ describe("picnic-mcp server", () => {
 		});
 		expect(calls.startCheckout[1]).toEqual({
 			mts: 1700000000000,
-			resolve_key: "age_verified",
+			resolveKey: "age_verified",
 		});
 	});
 
@@ -657,16 +640,14 @@ describe("picnic-mcp server", () => {
 		expect(calls.verified).toEqual(["123456"]);
 	});
 
-	it("reports tracking parts independently", async () => {
+	it("reports a delivery that is not on its way instead of failing", async () => {
 		await connect(fakeSession().session);
 		const result = await client.callTool({
 			name: "picnic_track_delivery",
 			arguments: { delivery_id: "d1" },
 		});
-		expect(payload(result)).toEqual({
-			position: { error: "404 Not Found" },
-			scenario: { value: { eta: "x" } },
-		});
+		expect(result.isError).toBeFalsy();
+		expect(payload(result)).toEqual({ inProgress: false });
 	});
 
 	it("returns product images as image content", async () => {
@@ -680,33 +661,7 @@ describe("picnic-mcp server", () => {
 		]);
 	});
 
-	it("explains the PICNIC_AGENT workaround when the promotions page changes format", async () => {
-		const rsc = new PicnicClient.UnexpectedPageFormatError(
-			"promo-page-all-promos-redirect",
-			"rsc",
-		);
-		await connect(fakeSession({ promoError: rsc }).session);
-		const result = await client.callTool({
-			name: "picnic_get_promotions",
-			arguments: {},
-		});
-		expect(result.isError).toBe(true);
-		expect(text(result)).toMatch(/PICNIC_AGENT/);
-
-		await close();
-		await connect(
-			fakeSession({ promoError: new Error("500 Internal Server Error") })
-				.session,
-		);
-		const other = await client.callTool({
-			name: "picnic_get_promotions",
-			arguments: {},
-		});
-		expect(text(other)).toMatch(/500/);
-		expect(text(other)).not.toMatch(/PICNIC_AGENT/);
-	});
-
-	it("composes structured recipe details with the page text at the settled portion count", async () => {
+	it("returns a recipe at the requested portions and refuses another count", async () => {
 		const { session, calls } = fakeSession();
 		await connect(session);
 		const result = await client.callTool({
@@ -715,32 +670,29 @@ describe("picnic-mcp server", () => {
 				recipe: `https://picnic.app/nl/recepten/${RECIPE_ID}/pasta`,
 			},
 		});
-		expect(calls.recipe).toEqual([
-			["getRecipeDetailsPage", RECIPE_ID, undefined],
-			["getRecipeDetailsPage", RECIPE_ID, 2],
-		]);
+		expect(calls.recipe).toEqual([[RECIPE_ID, undefined]]);
 		expect(payload(result)).toMatchObject({
 			id: RECIPE_ID,
 			url: `https://picnic.app/nl/recepten/${RECIPE_ID}`,
 			portions: 2,
-			default_portions: 2,
 			ingredients: [
 				{
 					product_id: "s9",
-					name: null,
-					quantity: 2,
+					quantity: 1,
+					needed: "(500 g nodig)",
 					selected_by_default: true,
 				},
 			],
-			ingredient_lines: ["Nudeln 500 g"],
-			instructions: ["Kochen."],
+			steps: ["Kochen."],
 		});
+		await close();
 
-		calls.recipe.length = 0;
-		await client.callTool({
+		await connect(fakeSession({ renderedPortions: 3 }).session);
+		const refused = await client.callTool({
 			name: "picnic_get_recipe",
 			arguments: { recipe: RECIPE_ID, portions: 4 },
 		});
-		expect(calls.recipe).toEqual([["getRecipeDetailsPage", RECIPE_ID, 4]]);
+		expect(refused.isError).toBe(true);
+		expect(text(refused)).toMatch(/3 portions instead of 4/);
 	});
 });
