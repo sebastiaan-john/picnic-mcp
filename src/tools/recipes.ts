@@ -3,7 +3,7 @@ import * as z from "zod";
 import { recipeUrl, resolveRecipeId } from "../picnic/recipe-id";
 import type { PicnicApi, Session } from "../session";
 import {
-	CART_MUTATION,
+	CART_ADDITION,
 	DESTRUCTIVE,
 	IDEMPOTENT_WRITE,
 	json,
@@ -154,7 +154,7 @@ export function registerRecipeTools(server: McpServer, session: Session) {
 			title: "Add recipe to cart",
 			description: `Adds a recipe's ingredients to the cart as one bundle, scaled to \`portions\`. Returns the assigned portions and whether any ingredient is unavailable; call picnic_get_cart to see the items. ${NOT_IDEMPOTENT}`,
 			inputSchema: z.object({ recipe: recipeRef, portions: portionsArg }),
-			annotations: CART_MUTATION,
+			annotations: CART_ADDITION,
 		},
 		({ recipe, portions }) =>
 			session.call(async (client) => {

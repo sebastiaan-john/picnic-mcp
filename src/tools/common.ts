@@ -36,12 +36,23 @@ export const IDEMPOTENT_WRITE: ToolAnnotations = {
 export const NOT_IDEMPOTENT =
 	"Not idempotent; each call applies again. If it fails, call picnic_get_cart before retrying.";
 
-/** Cart writes Picnic does not deduplicate; a retried add or remove applies again. */
-export const CART_MUTATION: ToolAnnotations = {
+/**
+ * Adding to the cart, which Picnic does not deduplicate: a retried add applies
+ * again. Not destructive, because it removes nothing; hosts such as Executor
+ * ask for approval on every destructive call, which would stop a model from
+ * filling a cart from a shopping list.
+ */
+export const CART_ADDITION: ToolAnnotations = {
 	readOnlyHint: false,
-	destructiveHint: true,
+	destructiveHint: false,
 	idempotentHint: false,
 	openWorldHint: true,
+};
+
+/** Removing from the cart; a retried removal applies again. */
+export const CART_REMOVAL: ToolAnnotations = {
+	...CART_ADDITION,
+	destructiveHint: true,
 };
 
 /** Destructive but safe to repeat, such as clearing the cart or cancelling a delivery. */
