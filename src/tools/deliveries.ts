@@ -23,7 +23,7 @@ function settled<T>(result: PromiseSettledResult<T>) {
 			: String(result.reason);
 	return {
 		error: EMPTY_BODY_RE.test(message)
-			? "Picnic returned no data; the delivery is not on its way."
+			? "Picnic returned no data, which for the position means the delivery is not on its way."
 			: message,
 	};
 }

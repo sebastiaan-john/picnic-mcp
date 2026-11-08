@@ -157,7 +157,7 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		{
 			title: "Get current promotions",
 			description:
-				"This week's deals from the Picnic deals page, in page order, each with the section it appears in. A deal is either one product (id, name, promotional price in cents, original price, labels such as '1+1 gratis') or a range of products (`group` name such as 'Gesneden fruit', `label` such as '2 voor €4', and an `example`); search for a group's name to find its products.",
+				"This week's deals from the Picnic deals page, section by section with a section's products before its groups, each with the section it appears in. A deal is either one product (id, name, promotional price in cents, original price, labels such as '1+1 gratis') or a range of products (`group` name such as 'Gesneden fruit', `label` such as '2 voor €4', and an `example`); search for a group's name to find its products.",
 			inputSchema: z.object(paginationArgs(100, 25)),
 			annotations: READ_ONLY,
 		},

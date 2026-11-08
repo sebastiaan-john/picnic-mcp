@@ -263,7 +263,7 @@ function fakeSession(
 						{
 							sellingUnitId: "s9",
 							name: null,
-							quantity: 1,
+							quantity: options.portions ?? 3,
 							neededText: "(500 g nodig)",
 							type: "CORE",
 							checked: true,
@@ -678,7 +678,8 @@ describe("picnic-mcp server", () => {
 		expect(result.isError).toBeFalsy();
 		expect(payload(result)).toEqual({
 			position: {
-				error: "Picnic returned no data; the delivery is not on its way.",
+				error:
+					"Picnic returned no data, which for the position means the delivery is not on its way.",
 			},
 			route: {
 				value: {
@@ -690,7 +691,7 @@ describe("picnic-mcp server", () => {
 		});
 	});
 
-	it("pages product and group deals in page order, each listed once", async () => {
+	it("pages product and group deals section by section, each listed once", async () => {
 		await connect(fakeSession().session);
 		const result = await client.callTool({
 			name: "picnic_get_promotions",
@@ -753,7 +754,7 @@ describe("picnic-mcp server", () => {
 			ingredients: [
 				{
 					product_id: "s9",
-					quantity: 1,
+					quantity: 2,
 					needed: "(500 g nodig)",
 					selected_by_default: true,
 				},
@@ -767,6 +768,9 @@ describe("picnic-mcp server", () => {
 			arguments: { recipe: RECIPE_ID, portions: 4 },
 		});
 		expect(calls.recipe).toEqual([[RECIPE_ID, 4]]);
-		expect(payload(scaled)).toMatchObject({ portions: 4 });
+		expect(payload(scaled)).toMatchObject({
+			portions: 4,
+			ingredients: [{ product_id: "s9", quantity: 4 }],
+		});
 	});
 });
