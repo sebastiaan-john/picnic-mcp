@@ -371,10 +371,14 @@ describe("picnic-mcp server", () => {
 			}
 		}
 		const byName = new Map(tools.map((t) => [t.name, t]));
+		// Hosts ask for approval on every destructive call; adding must not need it.
 		expect(byName.get("picnic_add_to_cart")?.annotations).toMatchObject({
-			destructiveHint: true,
+			destructiveHint: false,
 			idempotentHint: false,
 		});
+		expect(
+			byName.get("picnic_remove_from_cart")?.annotations?.destructiveHint,
+		).toBe(true);
 		expect(byName.get("picnic_clear_cart")?.annotations?.idempotentHint).toBe(
 			true,
 		);

@@ -3,7 +3,8 @@ import * as z from "zod";
 import { cartView } from "../picnic/cart-view";
 import type { Session } from "../session";
 import {
-	CART_MUTATION,
+	CART_ADDITION,
+	CART_REMOVAL,
 	DESTRUCTIVE,
 	IDEMPOTENT_WRITE,
 	idArg,
@@ -37,7 +38,7 @@ export function registerCartTools(server: McpServer, session: Session) {
 			title: "Add to cart",
 			description: `Adds \`count\` units of a product and returns the updated cart. ${NOT_IDEMPOTENT}`,
 			inputSchema: z.object({ product_id: productId, count: countArg }),
-			annotations: CART_MUTATION,
+			annotations: CART_ADDITION,
 		},
 		({ product_id, count }) =>
 			session.call((client) =>
@@ -53,7 +54,7 @@ export function registerCartTools(server: McpServer, session: Session) {
 			title: "Remove from cart",
 			description: `Removes \`count\` units of a product and returns the updated cart. ${NOT_IDEMPOTENT}`,
 			inputSchema: z.object({ product_id: productId, count: countArg }),
-			annotations: CART_MUTATION,
+			annotations: CART_REMOVAL,
 		},
 		({ product_id, count }) =>
 			session.call((client) =>
