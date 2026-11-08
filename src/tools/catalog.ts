@@ -15,7 +15,7 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		{
 			title: "Search products",
 			description:
-				"Products in the Picnic catalog matching keywords, in Picnic's order: id, name, brand, price in cents (original_price when discounted), unit, promotion labels, and image id. `bought_before` marks products this account ordered before. Use the id with picnic_add_to_cart or picnic_get_product.",
+				"Products in the Picnic catalog matching keywords, in Picnic's order: id, name, brand, price per unit in cents (original_price when discounted), unit, unit_price as display text such as '€1.99/l', promotion labels, and image id. `bought_before` marks products this account ordered before. Use the id with picnic_add_to_cart or picnic_get_product.",
 			inputSchema: z.object({
 				query: z
 					.string()
@@ -157,7 +157,7 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 		{
 			title: "Get current promotions",
 			description:
-				"This week's promoted products from the Picnic deals page: id, name, promotional price in cents, original price, label such as '1+1 gratis', and the deals-page section it appears in.",
+				"This week's deals from the Picnic deals page, in page order, each with the section it appears in. A deal is either one product (id, name, promotional price in cents, original price, labels such as '1+1 gratis') or a range of products (`group` name such as 'Gesneden fruit', `label` such as '2 voor €4', and an `example`); search for a group's name to find its products.",
 			inputSchema: z.object(paginationArgs(100, 25)),
 			annotations: READ_ONLY,
 		},
@@ -165,12 +165,25 @@ export function registerCatalogTools(server: McpServer, session: Session) {
 			session.call(async (client) => {
 				const { sections } = await client.catalog.getPromotions();
 				const seen = new Set<string>();
-				const promotions = sections.flatMap((section) =>
-					section.products
-						.filter((tile) => !seen.has(tile.id) && seen.add(tile.id))
+				const isNew = (id: string) => {
+					if (seen.has(id)) return false;
+					seen.add(id);
+					return true;
+				};
+				const deals = sections.flatMap((section) => [
+					...section.products
+						.filter((tile) => isNew(tile.id))
 						.map((tile) => ({ ...tileView(tile), section: section.title })),
-				);
-				const result = paginate(promotions, offset, limit);
+					...section.groups
+						.filter((group) => isNew(group.id))
+						.map((group) => ({
+							group: group.name,
+							...(group.label && { label: group.label }),
+							...(group.example && { example: group.example }),
+							section: section.title,
+						})),
+				]);
+				const result = paginate(deals, offset, limit);
 				return json({
 					promotions: result.items,
 					pagination: result.pagination,

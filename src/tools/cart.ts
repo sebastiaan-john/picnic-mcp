@@ -22,7 +22,7 @@ export function registerCartTools(server: McpServer, session: Session) {
 		{
 			title: "Get cart",
 			description:
-				"The current shopping cart: products with quantities and prices in cents, totals, and the selected delivery slot. Call this to verify the cart after a mutation reported an error.",
+				"The current shopping cart: products with quantities and prices in cents (a line's `price` covers its whole quantity after discounts), `total_price` as the amount to pay including deposits and fees, and the selected delivery slot. Call this to verify the cart after a mutation reported an error.",
 			annotations: READ_ONLY,
 		},
 		() =>

@@ -15,6 +15,19 @@ const deliveryId = idArg("Delivery id from picnic_get_deliveries");
 /** Picnic answers the position request with an empty body when the delivery is not on its way; picnic-api fails to parse it. */
 const EMPTY_BODY_RE = /unexpected (eof|end of (json|input))/i;
 
+function settled<T>(result: PromiseSettledResult<T>) {
+	if (result.status === "fulfilled") return { value: result.value };
+	const message =
+		result.reason instanceof Error
+			? result.reason.message
+			: String(result.reason);
+	return {
+		error: EMPTY_BODY_RE.test(message)
+			? "Picnic returned no data; the delivery is not on its way."
+			: message,
+	};
+}
+
 export function registerDeliveryTools(server: McpServer, session: Session) {
 	server.registerTool(
 		"picnic_get_deliveries",
@@ -35,11 +48,11 @@ export function registerDeliveryTools(server: McpServer, session: Session) {
 		},
 		({ status, limit, offset }) =>
 			session.call(async (client) => {
-				const page = paginate(
-					await client.delivery.getDeliverySummaries(status),
-					offset,
-					limit,
-				);
+				// picnic-api reports 0 items when the summary endpoint omits the count.
+				const summaries = (
+					await client.delivery.getDeliverySummaries(status)
+				).map(({ itemCount, ...summary }) => summary);
+				const page = paginate(summaries, offset, limit);
 				return json({ deliveries: page.items, pagination: page.pagination });
 			}),
 	);
@@ -49,7 +62,7 @@ export function registerDeliveryTools(server: McpServer, session: Session) {
 		{
 			title: "Get delivery",
 			description:
-				"One delivery in full: orders with their products and prices in cents, returned containers, deposits, delivery window, and status.",
+				"One delivery in full: orders with their products and prices in cents (a line's displayPrice covers its whole quantity after discounts), returned containers, deposits, delivery window, and status.",
 			inputSchema: z.object({ delivery_id: deliveryId }),
 			annotations: READ_ONLY,
 		},
@@ -64,22 +77,22 @@ export function registerDeliveryTools(server: McpServer, session: Session) {
 		{
 			title: "Track delivery",
 			description:
-				"Where a delivery that is out for delivery is: ETA, the driver's current point, the route (timestamped coordinates), driver, and vehicle. `inProgress` is false when the delivery is not on its way.",
+				"Where a delivery that is out for delivery is. `position` has the ETA (epoch ms), whether the driver is on the way, and `routeTime`, the driver's point in time on the route; `route` has timestamped coordinates, driver, vehicle, and destination. Each holds `value` or `error`, since either can be unavailable.",
 			inputSchema: z.object({ delivery_id: deliveryId }),
 			annotations: READ_ONLY,
 		},
 		({ delivery_id }) =>
 			session.call(async (client) => {
-				try {
-					const tracking =
-						await client.delivery.getDeliveryTracking(delivery_id);
-					const { vehicleImageDataUrl, ...route } = tracking.route;
-					return json({ ...tracking, route });
-				} catch (error) {
-					const message = error instanceof Error ? error.message : "";
-					if (EMPTY_BODY_RE.test(message)) return json({ inProgress: false });
-					throw error;
-				}
+				const [position, route] = await Promise.allSettled([
+					client.delivery.getDeliveryPosition(delivery_id),
+					client.delivery
+						.getDeliveryRoute(delivery_id)
+						.then(({ vehicleImageDataUrl, ...rest }) => rest),
+				]);
+				return json({
+					position: settled(position),
+					route: settled(route),
+				});
 			}),
 	);
 

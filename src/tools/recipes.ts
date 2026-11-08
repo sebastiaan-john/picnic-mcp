@@ -30,17 +30,15 @@ function resolve(client: PicnicApi, ref: string) {
 }
 
 /**
- * picnic-api refetches the page once when Picnic renders another portion
- * count than asked; some counts are still rejected, so check the result.
+ * Without a count Picnic renders the portions last chosen in the app, so an
+ * omitted count is fetched again at the recipe's stored default to keep the
+ * result independent of app state. picnic-api enforces a requested count.
  */
 async function loadRecipe(client: PicnicApi, id: string, portions?: number) {
 	const recipe = await client.recipe.getRecipe(id, { portions });
-	if (portions !== undefined && recipe.portions !== portions) {
-		throw new Error(
-			`Picnic rendered recipe ${id} at ${recipe.portions} portions instead of ${portions}; try another portion count.`,
-		);
-	}
-	return recipe;
+	if (portions !== undefined || recipe.portions === recipe.defaultPortions)
+		return recipe;
+	return client.recipe.getRecipe(id, { portions: recipe.defaultPortions });
 }
 
 export function registerRecipeTools(server: McpServer, session: Session) {
@@ -49,7 +47,7 @@ export function registerRecipeTools(server: McpServer, session: Session) {
 		{
 			title: "Get recipe",
 			description:
-				"A Picnic recipe: name, portions, times, ingredient products with ids, unit counts, the amount the recipe needs, and price in cents (type CUPBOARD is a pantry staple the user likely has; CORE_STOCKABLE keeps, such as stock cubes), steps, and allergens. Pass `portions` to scale.",
+				"A Picnic recipe: name, portions, times, ingredient products with ids, unit counts, the amount the recipe needs, and price in cents (type CUPBOARD is a pantry staple the user likely has; CORE_STOCKABLE keeps, such as stock cubes), steps, and the allergens of the ingredients selected by default. Pass `portions` to scale.",
 			inputSchema: z.object({ recipe: recipeRef, portions: portionsArg }),
 			annotations: READ_ONLY,
 		},

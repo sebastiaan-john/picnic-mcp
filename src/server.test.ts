@@ -50,7 +50,6 @@ function tile(id: string, overrides: Partial<Tile> = {}): Tile {
 function fakeSession(
 	opts: {
 		twoFactorPending?: boolean;
-		renderedPortions?: number;
 		cartCount?: number;
 		noSlot?: boolean;
 		checkoutIssue?: boolean;
@@ -122,6 +121,29 @@ function fakeSession(
 			}),
 			getFavoritesInAisle: async (aisleId: string) =>
 				aisleId === "PANTRY" ? [tile("s8")] : [],
+			getPromotions: async () => ({
+				sections: [
+					{
+						id: "a",
+						title: "Uitgelicht",
+						products: [tile("s3", { originalPrice: 299 })],
+						groups: [
+							{
+								id: "g1",
+								name: "Alpro vers",
+								example: "Bv. sojayoghurt",
+								label: "2 voor €3.99",
+							},
+						],
+					},
+					{
+						id: "b",
+						title: "Zuivel",
+						products: [tile("s3"), tile("s4")],
+						groups: [],
+					},
+				],
+			}),
 			getImageAsDataUri: async () => "data:image/png;base64,AQID",
 		},
 		cart: {
@@ -214,17 +236,24 @@ function fakeSession(
 			},
 		},
 		delivery: {
-			getDeliveryTracking: async () => {
+			getDeliveryPosition: async () => {
 				throw new SyntaxError("Unexpected end of JSON input");
 			},
+			getDeliveryRoute: async () => ({
+				version: 1,
+				points: [{ lat: 52.4, lng: 4.9, ts: 1 }],
+				driverName: "Sam",
+				vehicleImageDataUrl: "data:image/png;base64,AAAA",
+			}),
 		},
 		recipe: {
+			// Without a count Picnic renders the app's last-used 3, not the stored default 2.
 			getRecipe: async (id: string, options: { portions?: number }) => {
 				calls.recipe.push([id, options.portions]);
 				return {
 					id,
 					name: "Pasta",
-					portions: opts.renderedPortions ?? options.portions ?? 2,
+					portions: options.portions ?? 3,
 					defaultPortions: 2,
 					isSaved: false,
 					imageId: null,
@@ -640,14 +669,57 @@ describe("picnic-mcp server", () => {
 		expect(calls.verified).toEqual(["123456"]);
 	});
 
-	it("reports a delivery that is not on its way instead of failing", async () => {
+	it("reports tracking parts independently and leaves out the vehicle image", async () => {
 		await connect(fakeSession().session);
 		const result = await client.callTool({
 			name: "picnic_track_delivery",
 			arguments: { delivery_id: "d1" },
 		});
 		expect(result.isError).toBeFalsy();
-		expect(payload(result)).toEqual({ inProgress: false });
+		expect(payload(result)).toEqual({
+			position: {
+				error: "Picnic returned no data; the delivery is not on its way.",
+			},
+			route: {
+				value: {
+					version: 1,
+					points: [{ lat: 52.4, lng: 4.9, ts: 1 }],
+					driverName: "Sam",
+				},
+			},
+		});
+	});
+
+	it("pages product and group deals in page order, each listed once", async () => {
+		await connect(fakeSession().session);
+		const result = await client.callTool({
+			name: "picnic_get_promotions",
+			arguments: { limit: 2, offset: 1 },
+		});
+		expect(payload(result)).toEqual({
+			promotions: [
+				{
+					group: "Alpro vers",
+					label: "2 voor €3.99",
+					example: "Bv. sojayoghurt",
+					section: "Uitgelicht",
+				},
+				{
+					id: "s4",
+					name: "Product s4",
+					price: 199,
+					unit: "1 l",
+					section: "Zuivel",
+				},
+			],
+			pagination: {
+				offset: 1,
+				limit: 2,
+				returned: 2,
+				total: 3,
+				has_more: false,
+			},
+		});
 	});
 
 	it("returns product images as image content", async () => {
@@ -661,7 +733,7 @@ describe("picnic-mcp server", () => {
 		]);
 	});
 
-	it("returns a recipe at the requested portions and refuses another count", async () => {
+	it("returns a recipe at its stored default portions unless asked for another count", async () => {
 		const { session, calls } = fakeSession();
 		await connect(session);
 		const result = await client.callTool({
@@ -670,7 +742,10 @@ describe("picnic-mcp server", () => {
 				recipe: `https://picnic.app/nl/recepten/${RECIPE_ID}/pasta`,
 			},
 		});
-		expect(calls.recipe).toEqual([[RECIPE_ID, undefined]]);
+		expect(calls.recipe).toEqual([
+			[RECIPE_ID, undefined],
+			[RECIPE_ID, 2],
+		]);
 		expect(payload(result)).toMatchObject({
 			id: RECIPE_ID,
 			url: `https://picnic.app/nl/recepten/${RECIPE_ID}`,
@@ -685,14 +760,13 @@ describe("picnic-mcp server", () => {
 			],
 			steps: ["Kochen."],
 		});
-		await close();
 
-		await connect(fakeSession({ renderedPortions: 3 }).session);
-		const refused = await client.callTool({
+		calls.recipe.length = 0;
+		const scaled = await client.callTool({
 			name: "picnic_get_recipe",
 			arguments: { recipe: RECIPE_ID, portions: 4 },
 		});
-		expect(refused.isError).toBe(true);
-		expect(text(refused)).toMatch(/3 portions instead of 4/);
+		expect(calls.recipe).toEqual([[RECIPE_ID, 4]]);
+		expect(payload(scaled)).toMatchObject({ portions: 4 });
 	});
 });
